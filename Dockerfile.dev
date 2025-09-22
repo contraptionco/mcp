@@ -1,0 +1,41 @@
+# Development Dockerfile with hot reload
+FROM python:3.12-slim
+
+# Set working directory
+WORKDIR /app
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    gcc \
+    g++ \
+    curl \
+    git \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install uv
+RUN curl -LsSf https://astral.sh/uv/install.sh | sh
+ENV PATH="/root/.local/bin:$PATH"
+
+# Copy project files
+COPY pyproject.toml .
+COPY README.md .
+
+# Install dependencies including dev dependencies
+RUN uv venv && \
+    . .venv/bin/activate && \
+    uv pip install -e . && \
+    uv pip install pytest pytest-asyncio pytest-cov ruff mypy
+
+# Set environment variables
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PATH="/app/.venv/bin:$PATH"
+
+# Expose port
+EXPOSE 8000
+
+# Volume for live code updates
+VOLUME ["/app/src", "/app/tests"]
+
+# Run with hot reload
+CMD ["python", "-m", "uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]

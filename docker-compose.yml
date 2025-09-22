@@ -1,0 +1,48 @@
+version: '3.8'
+
+services:
+  ghost-mcp-server:
+    build: 
+      context: .
+      dockerfile: Dockerfile
+    image: ghost-mcp-server:latest
+    container_name: ghost-mcp-prod
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      - PYTHONUNBUFFERED=1
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - mcp-network
+
+  ghost-mcp-dev:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    image: ghost-mcp-server:dev
+    container_name: ghost-mcp-dev
+    ports:
+      - "8001:8000"
+    env_file:
+      - .env
+    environment:
+      - PYTHONUNBUFFERED=1
+    volumes:
+      - ./src:/app/src
+      - ./tests:/app/tests
+    profiles:
+      - dev
+    networks:
+      - mcp-network
+
+networks:
+  mcp-network:
+    driver: bridge
