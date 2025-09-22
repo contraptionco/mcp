@@ -256,7 +256,6 @@ class ChromaService:
                 query=dense_embedding,
                 key="$chroma_embedding",
                 limit=rank_limit,
-                ordinal=True,
                 return_rank=True,
             )
             dense_rrf = Val(dense_weight) / (Val(rrf_k) + dense_knn)
@@ -267,7 +266,6 @@ class ChromaService:
                 query=sparse_embedding,
                 key="sparse_vector",
                 limit=rank_limit,
-                ordinal=True,
                 return_rank=True,
             )
             sparse_rrf = Val(sparse_weight) / (Val(rrf_k) + sparse_knn)
