@@ -6,7 +6,7 @@ from typing import Any, cast
 import chromadb
 from chromadb.api.types import SearchResult as ChromaSearchResponse
 from chromadb.base_types import SparseVector
-from chromadb.execution.expression import Knn, Rank, Search, SelectField, Val
+from chromadb.execution.expression import Key, Knn, Rank, Search, Val
 from chromadb.types import Metadata
 
 from src.config import settings
@@ -235,20 +235,20 @@ class ChromaService:
         rank_expression: Rank | None = None
         if dense_embedding and dense_weight > 0:
             dense_knn = Knn(
-                embedding=dense_embedding,
+                query=dense_embedding,
                 key="$chroma_embedding",
                 limit=rank_limit,
-                ordinal=True,
+                return_rank=True,
             )
             dense_rrf = Val(dense_weight) / (Val(rrf_k) + dense_knn)
             rank_expression = dense_rrf
 
         if sparse_embedding and sparse_weight > 0:
             sparse_knn = Knn(
-                embedding=sparse_embedding,
+                query=sparse_embedding,
                 key="sparse_vector",
                 limit=rank_limit,
-                ordinal=True,
+                return_rank=True,
             )
             sparse_rrf = Val(sparse_weight) / (Val(rrf_k) + sparse_knn)
             rank_expression = (
@@ -262,7 +262,7 @@ class ChromaService:
             Search()
             .rank(rank_expression)
             .limit(max(limit * 3, limit))
-            .select(SelectField.DOCUMENT, SelectField.SCORE, SelectField.METADATA)
+            .select(Key.DOCUMENT, Key.SCORE, Key.METADATA)
         )
 
         response = self.collection.search([search_payload])
