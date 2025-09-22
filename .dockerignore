@@ -62,7 +62,6 @@ models/
 .cache/
 
 # Documentation
-README.md
 docs/
 
 # Pre-commit

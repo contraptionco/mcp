@@ -1,5 +1,5 @@
 # Multi-stage build for smaller final image
-FROM python:3.12-slim as builder
+FROM python:3.12-slim AS builder
 
 # Set working directory
 WORKDIR /app
@@ -15,23 +15,14 @@ RUN apt-get update && apt-get install -y \
 RUN curl -LsSf https://astral.sh/uv/install.sh | sh
 ENV PATH="/root/.local/bin:$PATH"
 
-# Copy project files
-COPY pyproject.toml .
-COPY README.md .
+# Copy project metadata and source
+COPY pyproject.toml README.md ./
+COPY src/ src/
 
-# Create virtual environment and install dependencies
+# Create virtual environment and install the application
 RUN uv venv && \
     . .venv/bin/activate && \
     uv pip install .
-
-# Copy source code
-COPY src/ src/
-
-# Run tests in build stage
-COPY tests/ tests/
-RUN . .venv/bin/activate && \
-    uv pip install pytest pytest-asyncio && \
-    python -m pytest tests/ || true
 
 # Final stage - smaller runtime image
 FROM python:3.12-slim
