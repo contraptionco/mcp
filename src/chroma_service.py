@@ -210,11 +210,29 @@ class ChromaService:
         dense_embedding = self.embedding_service.embed_text(query)
         sparse_embedding = self.embedding_service.sparse_embed_query(query)
 
-        return self._hybrid_rrf_search(
+        results = self._hybrid_rrf_search(
             dense_embedding=dense_embedding,
             sparse_embedding=sparse_embedding,
             limit=limit,
         )
+
+        # Console-friendly printout for quick debugging/inspection
+        try:
+            print(f"\n📊 Hybrid Search Results (RRF Combined) — Query: {query!r}")
+            if results:
+                for i, result in enumerate(results):
+                    title = result.post_title or "Unknown"
+                    score = result.relevance_score or 0.0
+                    excerpt = (result.excerpt or "").strip()
+                    print(f"   {i + 1}. [{title}] Score: {score:.4f}")
+                    if excerpt:
+                        print(f"      Text: {excerpt[:100]}...")
+            else:
+                print("   No results")
+        except Exception:  # Best-effort printing; never block search on logging issues
+            pass
+
+        return results
 
     def _hybrid_rrf_search(
         self,
@@ -238,6 +256,7 @@ class ChromaService:
                 query=dense_embedding,
                 key="$chroma_embedding",
                 limit=rank_limit,
+                ordinal=True,
                 return_rank=True,
             )
             dense_rrf = Val(dense_weight) / (Val(rrf_k) + dense_knn)
@@ -248,6 +267,7 @@ class ChromaService:
                 query=sparse_embedding,
                 key="sparse_vector",
                 limit=rank_limit,
+                ordinal=True,
                 return_rank=True,
             )
             sparse_rrf = Val(sparse_weight) / (Val(rrf_k) + sparse_knn)
@@ -262,7 +282,7 @@ class ChromaService:
             Search()
             .rank(rank_expression)
             .limit(max(limit * 3, limit))
-            .select(Key.DOCUMENT, Key.SCORE, Key.METADATA)
+            .select(Key.DOCUMENT, Key.SCORE, Key.METADATA, "post_title")
         )
 
         response = self.collection.search([search_payload])
