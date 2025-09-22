@@ -1,6 +1,100 @@
 # Contraption Company MCP
 
-A production-ready MCP (Model Context Protocol) server for indexing and searching Contraption Company blog posts using Chroma Cloud and semantic search.
+An MCP (Model Context Protocol) server for [Contraption Company](https://contraption.co) essay, built on [Chroma Cloud](https://trychroma.com).
+
+## How to Install
+
+Contraption Company MCP is available as a hosted MCP server with no authentication.
+
+| Field      | Value                        |
+| ---------- | ---------------------------- |
+| Server URL | `https://mcp.contraption.co`  |
+
+### How to configure in common clients
+
+<details>
+<summary><b>Cursor</b></summary>
+
+Create or edit `~/.cursor/mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "contraption-company": {
+      "url": "https://mcp.contraption.co"
+    }
+  }
+}
+```
+
+</details>
+
+<details>
+<summary><b>VS Code (Copilot Chat MCP)</b></summary>
+
+Create or edit `.vscode/mcp.json`:
+
+```json
+{
+  "servers": {
+    "contraption-company": {
+      "type": "http",
+      "url": "https://mcp.contraption.co"
+    }
+  }
+}
+```
+
+</details>
+
+<details>
+<summary><b>Codex</b></summary>
+
+Add to `~/.codex/config.toml`:
+
+```toml
+[mcp_servers.contraption-company]
+command = "npx"
+args = ["mcp-remote", "--transport", "http", "https://mcp.contraption.co"]
+```
+
+</details>
+
+<details>
+<summary><b>Claude Code</b></summary>
+
+Run in your terminal:
+
+```bash
+claude mcp add --transport http contraption-company https://mcp.contraption.co
+```
+
+</details>
+
+<details>
+<summary><b>OpenAI SDK (Python)</b></summary>
+
+```python
+from openai import OpenAI
+
+client = OpenAI()
+
+response = client.responses.create(
+    model="gpt-5",
+    input="List the newest Contraption Company blog posts.",
+    tools=[
+        {
+            "type": "mcp",
+            "server_label": "contraption-company",
+            "server_url": "https://mcp.contraption.co",
+            "require_approval": "never",
+        }
+    ],
+)
+print(response)
+```
+
+</details>
 
 ## Features
 
@@ -12,41 +106,10 @@ A production-ready MCP (Model Context Protocol) server for indexing and searchin
 - Docker Ready: Includes Dockerfile for easy deployment
 - Well Tested: Comprehensive test suite with pytest
 
-## Configuration
-
-You'll need:
-- **Ghost Admin API Key**: From your Ghost Admin panel (Settings > Integrations)
-- **Chroma Cloud Credentials**: Tenant ID, Database, and API key from Chroma Cloud
-- **Ghost Blog URL**: Your Ghost blog's URL
-
-## Cursor Configuration
-
-Add to your MCP config at `~/.cursor/mcp.json`:
-
-```json
-{
-  "mcpServers": {
-    "contraption-company-mcp": {
-      "url": "http://localhost:8000/"
-    }
-  }
-}
-```
-
-Then start the server:
-```bash
-uv run python -m src.main
-```
-
-The server will:
-- Start immediately on http://localhost:8000
-- Serve existing indexed posts right away
-- Index new posts in the background
-- Work with your Cursor configuration
-
-## Quick Start
+## Run Locally
 
 1. Clone and install:
+
 ```bash
 git clone <repository>
 cd mcp
@@ -54,18 +117,20 @@ uv sync --all-extras
 ```
 
 2. Configure environment:
+
 ```bash
 cp .env.example .env
 # Edit .env with your credentials
 ```
 
 3. Run the server:
+
 ```bash
 ./run.sh
 # Or: uv run python -m src.main
 ```
 
-## Docker
+### Docker
 
 ```bash
 # Build
@@ -78,6 +143,14 @@ docker run -p 8000:8000 --env-file .env contraption-mcp
 docker-compose up
 ```
 
+## Configuration
+
+Running locally requires credentials for external services:
+
+- **Ghost Admin API Key**: From your Ghost Admin panel (Settings > Integrations)
+- **Chroma Cloud Credentials**: Tenant ID, Database, and API key from Chroma Cloud
+- **Ghost Blog URL**: Your Ghost blog's URL
+
 ## MCP Tools
 
 - `get_post(slug)`: Get a single blog post by slug
@@ -89,12 +162,12 @@ docker-compose up
 - `GET /`: Server info (redirects to GitHub repo for non-MCP requests)
 - `GET /health`: Health check
 - `POST /webhook/ghost/{secret}`: Secure webhook endpoint for Ghost updates
-- `POST /reindex`: Manual reindexing
 - `/mcp/*`: MCP protocol endpoints
 
 ### Webhook Security
 
 The webhook endpoint requires a secret token in the URL path for security. Configure it in Ghost Admin:
+
 1. Go to Settings → Integrations → Webhooks
 2. Set URL to: `https://your-domain.com/webhook/ghost/{your-webhook-secret}`
 3. Replace `{your-webhook-secret}` with the value from your `.env` file
