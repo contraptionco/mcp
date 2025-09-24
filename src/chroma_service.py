@@ -258,7 +258,7 @@ class ChromaService:
                 limit=rank_limit,
                 return_rank=True,
             )
-            dense_rrf = Val(dense_weight) / (Val(rrf_k) + dense_knn)
+            dense_rrf = Val(-dense_weight) / (Val(rrf_k) + dense_knn)
             rank_expression = dense_rrf
 
         if sparse_embedding and sparse_weight > 0:
@@ -268,7 +268,7 @@ class ChromaService:
                 limit=rank_limit,
                 return_rank=True,
             )
-            sparse_rrf = Val(sparse_weight) / (Val(rrf_k) + sparse_knn)
+            sparse_rrf = Val(-sparse_weight) / (Val(rrf_k) + sparse_knn)
             rank_expression = (
                 sparse_rrf if rank_expression is None else rank_expression + sparse_rrf
             )
