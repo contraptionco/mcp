@@ -153,7 +153,7 @@ Running locally requires credentials for external services:
 
 ## MCP Tools
 
-- `get_post(slug)`: Get a single blog post by slug
+- `fetch(url, method="GET", headers=None, body=None)`: Fetch a single blog post via the MCP fetch contract
 - `list_posts(sort_by, page, limit)`: List posts with pagination
 - `search(query, limit)`: Semantic search across posts
 

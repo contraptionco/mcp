@@ -1,5 +1,7 @@
+import json
 import logging
 from typing import Any
+from urllib.parse import urlparse
 
 from fastmcp import FastMCP
 
@@ -20,24 +22,78 @@ async def get_chroma_service() -> ChromaService:
     return _chroma_service
 
 
-@mcp.tool()
-async def get_post(slug: str) -> dict[str, Any]:
-    """
-    Get a blog post by its slug.
+def _extract_slug_from_url(url: str) -> str | None:
+    """Extract a post slug from user input.
 
-    Args:
-        slug: The slug of the post to retrieve
+    The MCP contract references HTTP-style requests, so we support a few shapes:
 
-    Returns:
-        The post content and metadata
+    - ``post://{slug}`` or ``ghost://{slug}`` custom schemes
+    - Fully qualified Ghost URLs (``https://example.com/posts/{slug}``)
+    - Bare slugs with no scheme
     """
+
+    parsed = urlparse(url)
+
+    if parsed.scheme in {"post", "ghost", ""}:
+        if parsed.path and parsed.path.strip("/"):
+            return parsed.path.strip("/")
+        if parsed.netloc:
+            return parsed.netloc
+        return parsed.path or None
+
+    if parsed.scheme in {"http", "https"}:
+        path = parsed.path.strip("/")
+        if not path:
+            return None
+        return path.split("/")[-1]
+
+    return None
+
+
+@mcp.tool(name="fetch")
+async def fetch(
+    url: str,
+    method: str = "GET",
+    headers: dict[str, str] | None = None,
+    body: str | None = None,
+) -> dict[str, Any]:
+    """Fetch a blog post using the MCP HTTP-style contract."""
+
+    del headers, body
+
+    method = method.upper()
+    if method != "GET":
+        return {
+            "status_code": 405,
+            "status_text": "Method Not Allowed",
+            "headers": {"Allow": "GET"},
+            "body": "",
+            "url": url,
+        }
+
+    slug = _extract_slug_from_url(url)
+    if not slug:
+        return {
+            "status_code": 400,
+            "status_text": "Bad Request",
+            "headers": {"Content-Type": "application/json"},
+            "body": json.dumps({"error": "Unable to determine post slug from URL"}),
+            "url": url,
+        }
+
     chroma_service = await get_chroma_service()
     post_summary, markdown = await chroma_service.get_post_markdown(slug)
 
     if not post_summary or markdown is None:
-        return {"error": f"Post with slug '{slug}' not found"}
+        return {
+            "status_code": 404,
+            "status_text": "Not Found",
+            "headers": {"Content-Type": "application/json"},
+            "body": json.dumps({"error": f"Post with slug '{slug}' not found"}),
+            "url": url,
+        }
 
-    return {
+    response_body = {
         "id": post_summary.id,
         "slug": post_summary.slug,
         "title": post_summary.title,
@@ -50,6 +106,14 @@ async def get_post(slug: str) -> dict[str, Any]:
         "tags": post_summary.tags,
         "authors": post_summary.authors,
         "markdown": markdown,
+    }
+
+    return {
+        "status_code": 200,
+        "status_text": "OK",
+        "headers": {"Content-Type": "application/json"},
+        "body": json.dumps(response_body),
+        "url": url,
     }
 
 

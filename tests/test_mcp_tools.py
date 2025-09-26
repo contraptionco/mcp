@@ -1,3 +1,4 @@
+import json
 from datetime import datetime
 from unittest.mock import AsyncMock, patch
 
@@ -10,7 +11,7 @@ from src.models import PostSummary, SearchResult
 class TestMCPTools:
     @pytest.mark.asyncio
     @patch("src.mcp_server.get_chroma_service")
-    async def test_get_post_found(self, mock_get_service):
+    async def test_fetch_found(self, mock_get_service):
         mock_service = AsyncMock()
         mock_get_service.return_value = mock_service
 
@@ -29,28 +30,31 @@ class TestMCPTools:
         mock_service.get_post_markdown.return_value = (test_summary, "# Markdown content")
 
         tools = await mcp.get_tools()
-        get_post_func = tools["get_post"].fn
-        result = await get_post_func(slug="test-post")
+        fetch_func = tools["fetch"].fn
+        result = await fetch_func(url="post://test-post")
 
-        assert result["slug"] == "test-post"
-        assert result["title"] == "Test Post"
-        assert result["markdown"] == "# Markdown content"
-        assert "error" not in result
+        assert result["status_code"] == 200
+        body = json.loads(result["body"])
+        assert body["slug"] == "test-post"
+        assert body["title"] == "Test Post"
+        assert body["markdown"] == "# Markdown content"
         mock_service.get_post_markdown.assert_awaited_once_with("test-post")
 
     @pytest.mark.asyncio
     @patch("src.mcp_server.get_chroma_service")
-    async def test_get_post_not_found(self, mock_get_service):
+    async def test_fetch_not_found(self, mock_get_service):
         mock_service = AsyncMock()
         mock_get_service.return_value = mock_service
         mock_service.get_post_markdown.return_value = (None, None)
 
         tools = await mcp.get_tools()
-        get_post_func = tools["get_post"].fn
-        result = await get_post_func(slug="nonexistent")
+        fetch_func = tools["fetch"].fn
+        result = await fetch_func(url="post://nonexistent")
 
-        assert "error" in result
-        assert "not found" in result["error"]
+        assert result["status_code"] == 404
+        body = json.loads(result["body"])
+        assert "error" in body
+        assert "not found" in body["error"]
         mock_service.get_post_markdown.assert_awaited_once_with("nonexistent")
 
     @pytest.mark.asyncio
