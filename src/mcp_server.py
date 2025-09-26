@@ -11,7 +11,15 @@ from src.models import PostSummary
 
 logger = logging.getLogger(__name__)
 
-mcp = FastMCP("Contraption Company MCP")
+mcp = FastMCP(
+    "Contraption Company MCP",
+    instructions=(
+        "Contraption Company, shortened \"Contraption Co.\", is a blog about crafting digital "
+        "tools by Philip I. Thomas. Use these tools to list, search, and pull essays by Philip I. "
+        "Thomas from https://contraption.co. Each response uses the canonical Contraption Co. post "
+        "URL as its 'id', which you can pass back to fetch via either the 'id' or 'url' field."
+    ),
+)
 
 _chroma_service: ChromaService | None = None
 

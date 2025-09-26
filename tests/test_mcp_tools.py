@@ -9,6 +9,16 @@ from src.models import PostSummary, SearchResult
 
 
 class TestMCPTools:
+    def test_server_instructions(self):
+        assert (
+            mcp.instructions
+            == "Contraption Company, shortened \"Contraption Co.\", is a blog about crafting "
+            "digital tools by Philip I. Thomas. Use these tools to list, search, and pull essays by "
+            "Philip I. Thomas from https://contraption.co. Each response uses the canonical "
+            "Contraption Co. post URL as its 'id', which you can pass back to fetch via either the "
+            "'id' or 'url' field."
+        )
+
     @pytest.mark.asyncio
     @patch("src.mcp_server.get_chroma_service")
     async def test_fetch_with_id_slug(self, mock_get_service):
