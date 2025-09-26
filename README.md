@@ -15,7 +15,9 @@ Contraption Company MCP is available as a hosted MCP server with no authenticati
 <details>
 <summary><b>Cursor</b></summary>
 
-Create or edit `~/.cursor/mcp.json`:
+Use the deep link to install directly in Cursor: [Install Contraption Company MCP](cursor://anysphere.cursor-deeplink/mcp/install?name=contraption-company&config=eyJ1cmwiOiJodHRwczovL21jcC5jb250cmFwdGlvbi5jbyJ9).
+
+Or, create or edit `~/.cursor/mcp.json`:
 
 ```json
 {
@@ -26,6 +28,16 @@ Create or edit `~/.cursor/mcp.json`:
   }
 }
 ```
+
+</details>
+
+<details>
+<summary><b>ChatGPT</b></summary>
+
+1. Open **Settings → Connectors**.
+2. Click **Create new connector**.
+3. Set **MCP Server URL** to `https://mcp.contraption.co`.
+4. Leave authentication blank and save.
 
 </details>
 
