@@ -15,9 +15,9 @@ Contraption Company MCP is available as a hosted MCP server with no authenticati
 <details>
 <summary><b>Cursor</b></summary>
 
-Use the deep link to install directly in Cursor: [Install Contraption Company MCP](https://cursor.com/docs/context/mcp/install-links).
+Use the deep link to install directly in Cursor: [Install Contraption Company MCP](cursor://anysphere.cursor-deeplink/mcp/install?name=contraption-company&config=eyJ1cmwiOiJodHRwczovL21jcC5jb250cmFwdGlvbi5jbyJ9).
 
-Create or edit `~/.cursor/mcp.json`:
+Or, create or edit `~/.cursor/mcp.json`:
 
 ```json
 {
