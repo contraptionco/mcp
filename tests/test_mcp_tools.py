@@ -98,7 +98,7 @@ class TestMCPTools:
 
     @pytest.mark.asyncio
     @patch("src.mcp_server.get_chroma_service")
-    async def test_search_posts(self, mock_get_service):
+    async def test_search_tool(self, mock_get_service):
         mock_service = AsyncMock()
         mock_get_service.return_value = mock_service
 
@@ -117,8 +117,8 @@ class TestMCPTools:
         mock_service.search.return_value = test_results
 
         tools = await mcp.get_tools()
-        search_posts_func = tools["search_posts"].fn
-        result = await search_posts_func(query="test query", limit=5)
+        search_func = tools["search"].fn
+        result = await search_func(query="test query", limit=5)
 
         assert "results" in result
         assert len(result["results"]) == 1

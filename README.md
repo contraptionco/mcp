@@ -155,7 +155,7 @@ Running locally requires credentials for external services:
 
 - `get_post(slug)`: Get a single blog post by slug
 - `list_posts(sort_by, page, limit)`: List posts with pagination
-- `search_posts(query, limit)`: Semantic search across posts
+- `search(query, limit)`: Semantic search across posts
 
 ## API Endpoints
 
