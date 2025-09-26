@@ -72,7 +72,7 @@ class TestMCPTools:
 
         tools = await mcp.get_tools()
         fetch_func = tools["fetch"].fn
-        result = await fetch_func(url="https://example.com/blog/test-post")
+        result = await fetch_func(id="https://example.com/blog/test-post")
 
         assert result["status"]["code"] == 200
         body = json.loads(result["body"]["text"])
@@ -113,7 +113,7 @@ class TestMCPTools:
         tools = await mcp.get_tools()
         fetch_func = tools["fetch"].fn
 
-        result = await fetch_func(url="https://example.com/post", method="POST")
+        result = await fetch_func(id="https://example.com/post", method="POST")
 
         assert result["status"]["code"] == 405
         assert result["headers"]["Allow"] == "GET"

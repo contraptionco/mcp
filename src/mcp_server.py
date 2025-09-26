@@ -81,15 +81,14 @@ def _canonical_post_url(post_summary: PostSummary, fallback_url: str | None = No
 
 @mcp.tool(name="fetch")
 async def fetch(
-    id: str | None = None,
-    url: str | None = None,
+    id: str = "",
     method: str = "GET",
     headers: dict[str, str] | None = None,
     body: str | None = None,
 ) -> dict[str, Any]:
     """Fetch a blog post using the MCP HTTP-style contract.
 
-    Accepts either an ``id`` or ``url`` identifier.
+    Accepts an ``id`` that can be a slug, canonical URL, or a ``post://`` style identifier.
     """
 
     del headers, body
@@ -102,7 +101,7 @@ async def fetch(
             "body": {"kind": "text", "text": ""},
         }
 
-    identifier = url or id
+    identifier = id
 
     if not identifier:
         return {
@@ -110,7 +109,7 @@ async def fetch(
             "headers": {"Content-Type": "application/json"},
             "body": {
                 "kind": "text",
-                "text": json.dumps({"error": "Either 'id' or 'url' must be provided"}),
+                "text": json.dumps({"error": "An 'id' must be provided"}),
             },
         }
 
