@@ -102,21 +102,11 @@ class TestMCPTools:
         tools = await mcp.get_tools()
         fetch_func = tools["fetch"].fn
 
-        result = await fetch_func()
+        result = await fetch_func(id="")
 
         assert result["status"]["code"] == 400
         body = json.loads(result["body"]["text"])
         assert "id" in body["error"]
-
-    @pytest.mark.asyncio
-    async def test_fetch_requires_get_method(self):
-        tools = await mcp.get_tools()
-        fetch_func = tools["fetch"].fn
-
-        result = await fetch_func(id="https://example.com/post", method="POST")
-
-        assert result["status"]["code"] == 405
-        assert result["headers"]["Allow"] == "GET"
 
     @pytest.mark.asyncio
     @patch("src.mcp_server.get_chroma_service")

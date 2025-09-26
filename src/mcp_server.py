@@ -80,30 +80,13 @@ def _canonical_post_url(post_summary: PostSummary, fallback_url: str | None = No
 
 
 @mcp.tool(name="fetch")
-async def fetch(
-    id: str = "",
-    method: str = "GET",
-    headers: dict[str, str] | None = None,
-    body: str | None = None,
-) -> dict[str, Any]:
+async def fetch(id: str) -> dict[str, Any]:
     """Fetch a blog post using the MCP HTTP-style contract.
 
     Accepts an ``id`` that can be a slug, canonical URL, or a ``post://`` style identifier.
     """
 
-    del headers, body
-
-    method = method.upper()
-    if method != "GET":
-        return {
-            "status": {"code": 405, "text": "Method Not Allowed"},
-            "headers": {"Allow": "GET"},
-            "body": {"kind": "text", "text": ""},
-        }
-
-    identifier = id
-
-    if not identifier:
+    if not id:
         return {
             "status": {"code": 400, "text": "Bad Request"},
             "headers": {"Content-Type": "application/json"},
@@ -113,7 +96,7 @@ async def fetch(
             },
         }
 
-    slug = _extract_slug_from_url(identifier)
+    slug = _extract_slug_from_url(id)
     if not slug:
         return {
             "status": {"code": 400, "text": "Bad Request"},
@@ -137,7 +120,7 @@ async def fetch(
             },
         }
 
-    resolved_url = _canonical_post_url(post_summary, identifier)
+    resolved_url = _canonical_post_url(post_summary, id)
     if not resolved_url:
         logger.warning("Unable to resolve canonical URL for post %s", post_summary.id)
         return {
