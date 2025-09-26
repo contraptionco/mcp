@@ -108,8 +108,8 @@ async def list_posts(
     }
 
 
-@mcp.tool()
-async def search_posts(
+@mcp.tool(name="search")
+async def search(
     query: str,
     limit: int = 10,
 ) -> dict[str, Any]:
