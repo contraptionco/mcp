@@ -1,3 +1,4 @@
+import json
 from datetime import datetime
 from unittest.mock import AsyncMock, patch
 
@@ -10,7 +11,7 @@ from src.models import PostSummary, SearchResult
 class TestMCPTools:
     @pytest.mark.asyncio
     @patch("src.mcp_server.get_chroma_service")
-    async def test_get_post_found(self, mock_get_service):
+    async def test_fetch_with_id_slug(self, mock_get_service):
         mock_service = AsyncMock()
         mock_get_service.return_value = mock_service
 
@@ -29,29 +30,85 @@ class TestMCPTools:
         mock_service.get_post_markdown.return_value = (test_summary, "# Markdown content")
 
         tools = await mcp.get_tools()
-        get_post_func = tools["get_post"].fn
-        result = await get_post_func(slug="test-post")
+        fetch_func = tools["fetch"].fn
+        result = await fetch_func(id="post://test-post")
 
-        assert result["slug"] == "test-post"
-        assert result["title"] == "Test Post"
-        assert result["markdown"] == "# Markdown content"
-        assert "error" not in result
+        assert result["status"]["code"] == 200
+        body = json.loads(result["body"]["text"])
+        assert body["id"] == "https://example.com/test-post"
+        assert body["title"] == "Test Post"
+        assert body["markdown"] == "# Markdown content"
+        assert "slug" not in body
+        assert result["headers"]["x-resolved-url"] == "https://example.com/test-post"
         mock_service.get_post_markdown.assert_awaited_once_with("test-post")
 
     @pytest.mark.asyncio
     @patch("src.mcp_server.get_chroma_service")
-    async def test_get_post_not_found(self, mock_get_service):
+    async def test_fetch_with_full_url(self, mock_get_service):
+        mock_service = AsyncMock()
+        mock_get_service.return_value = mock_service
+
+        test_summary = PostSummary(
+            id="test-id",
+            slug="test-post",
+            title="Test Post",
+            excerpt="Excerpt",
+            url="https://example.com/test-post",
+            published_at=datetime.now(),
+            updated_at=datetime.now(),
+            tags=["test"],
+            authors=["Author"],
+        )
+
+        mock_service.get_post_markdown.return_value = (test_summary, "# Markdown content")
+
+        tools = await mcp.get_tools()
+        fetch_func = tools["fetch"].fn
+        result = await fetch_func(url="https://example.com/blog/test-post")
+
+        assert result["status"]["code"] == 200
+        body = json.loads(result["body"]["text"])
+        assert body["id"] == "https://example.com/test-post"
+        assert "slug" not in body
+        mock_service.get_post_markdown.assert_awaited_once_with("test-post")
+
+    @pytest.mark.asyncio
+    @patch("src.mcp_server.get_chroma_service")
+    async def test_fetch_not_found(self, mock_get_service):
         mock_service = AsyncMock()
         mock_get_service.return_value = mock_service
         mock_service.get_post_markdown.return_value = (None, None)
 
         tools = await mcp.get_tools()
-        get_post_func = tools["get_post"].fn
-        result = await get_post_func(slug="nonexistent")
+        fetch_func = tools["fetch"].fn
+        result = await fetch_func(id="post://nonexistent")
 
-        assert "error" in result
-        assert "not found" in result["error"]
+        assert result["status"]["code"] == 404
+        body = json.loads(result["body"]["text"])
+        assert "error" in body
+        assert "not found" in body["error"]
         mock_service.get_post_markdown.assert_awaited_once_with("nonexistent")
+
+    @pytest.mark.asyncio
+    async def test_fetch_requires_identifier(self):
+        tools = await mcp.get_tools()
+        fetch_func = tools["fetch"].fn
+
+        result = await fetch_func()
+
+        assert result["status"]["code"] == 400
+        body = json.loads(result["body"]["text"])
+        assert "id" in body["error"]
+
+    @pytest.mark.asyncio
+    async def test_fetch_requires_get_method(self):
+        tools = await mcp.get_tools()
+        fetch_func = tools["fetch"].fn
+
+        result = await fetch_func(url="https://example.com/post", method="POST")
+
+        assert result["status"]["code"] == 405
+        assert result["headers"]["Allow"] == "GET"
 
     @pytest.mark.asyncio
     @patch("src.mcp_server.get_chroma_service")
@@ -92,7 +149,8 @@ class TestMCPTools:
 
         assert "posts" in result
         assert len(result["posts"]) == 2
-        assert result["posts"][0]["slug"] == "post-1"
+        assert result["posts"][0]["id"] == "https://example.com/post-1"
+        assert "slug" not in result["posts"][0]
         assert result["pagination"]["page"] == 1
         mock_service.list_posts.assert_called_once()
 
@@ -122,7 +180,8 @@ class TestMCPTools:
 
         assert "results" in result
         assert len(result["results"]) == 1
-        assert result["results"][0]["slug"] == "post-1"
+        assert result["results"][0]["id"] == "https://example.com/post-1"
+        assert "slug" not in result["results"][0]
         assert result["results"][0]["relevance_score"] == 0.95
         assert result["query"] == "test query"
         mock_service.search.assert_called_once_with("test query", 5)

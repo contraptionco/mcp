@@ -145,6 +145,22 @@ class ChromaService:
 
         return summary, markdown
 
+    async def get_post_markdown_by_id(self, post_id: str) -> tuple[PostSummary | None, str | None]:
+        results = self.collection.get(
+            where={"post_id": post_id},
+            limit=1,
+        )
+
+        metadatas = cast(list[dict[str, Any] | None], results.get("metadatas", []))
+        if not metadatas or metadatas[0] is None:
+            return None, None
+
+        slug = str(metadatas[0].get("post_slug", "")).strip()
+        if not slug:
+            return None, None
+
+        return await self.get_post_markdown(slug)
+
     async def list_posts(
         self,
         limit: int = 10,

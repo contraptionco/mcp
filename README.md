@@ -153,9 +153,9 @@ Running locally requires credentials for external services:
 
 ## MCP Tools
 
-- `get_post(slug)`: Get a single blog post by slug
-- `list_posts(sort_by, page, limit)`: List posts with pagination
-- `search(query, limit)`: Semantic search across posts
+- `fetch(id=None, url=None, method="GET", headers=None, body=None)`: Fetch a single blog post via the MCP fetch contract using the canonical post URL as the identifier. Provide either the `id` returned by `list_posts`/`search` (which is the canonical URL) or a `url`; Ghost slugs and shorthand schemes are also accepted but responses always resolve to full URLs.
+- `list_posts(sort_by, page, limit)`: List posts with pagination, returning canonical URLs as identifiers
+- `search(query, limit)`: Semantic search across posts that emits canonical URLs for result IDs
 
 ## API Endpoints
 

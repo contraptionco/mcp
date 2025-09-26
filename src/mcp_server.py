@@ -1,10 +1,13 @@
+import json
 import logging
 from typing import Any
+from urllib.parse import urljoin, urlparse
 
 from fastmcp import FastMCP
 
 from src.chroma_service import ChromaService
 from src.config import settings
+from src.models import PostSummary
 
 logger = logging.getLogger(__name__)
 
@@ -20,29 +23,131 @@ async def get_chroma_service() -> ChromaService:
     return _chroma_service
 
 
-@mcp.tool()
-async def get_post(slug: str) -> dict[str, Any]:
-    """
-    Get a blog post by its slug.
+def _extract_slug_from_url(url: str) -> str | None:
+    """Extract a post slug from user input.
 
-    Args:
-        slug: The slug of the post to retrieve
+    The MCP contract references HTTP-style requests, so we support a few shapes:
 
-    Returns:
-        The post content and metadata
+    - ``post://{slug}`` or ``ghost://{slug}`` custom schemes
+    - Fully qualified Ghost URLs (``https://example.com/posts/{slug}``)
+    - Bare slugs with no scheme
     """
+
+    parsed = urlparse(url)
+
+    if parsed.scheme in {"post", "ghost", ""}:
+        if parsed.path and parsed.path.strip("/"):
+            return parsed.path.strip("/")
+        if parsed.netloc:
+            return parsed.netloc
+        return parsed.path or None
+
+    if parsed.scheme in {"http", "https"}:
+        path = parsed.path.strip("/")
+        if not path:
+            return None
+        return path.split("/")[-1]
+
+    return None
+
+
+def _canonical_post_url(post_summary: PostSummary, fallback_url: str | None = None) -> str | None:
+    """Resolve a canonical, HTTP(S) URL for a post."""
+
+    if post_summary.url:
+        return post_summary.url
+
+    if fallback_url:
+        parsed_fallback = urlparse(fallback_url)
+        if parsed_fallback.scheme in {"http", "https"} and parsed_fallback.netloc:
+            return fallback_url
+
+    base_url = settings.ghost_api_url
+    if base_url and post_summary.slug:
+        parsed_base = urlparse(base_url)
+        if parsed_base.scheme and parsed_base.netloc:
+            origin = f"{parsed_base.scheme}://{parsed_base.netloc}"
+            return urljoin(origin.rstrip("/") + "/", post_summary.slug.strip("/"))
+
+    return None
+
+
+@mcp.tool(name="fetch")
+async def fetch(
+    id: str | None = None,
+    url: str | None = None,
+    method: str = "GET",
+    headers: dict[str, str] | None = None,
+    body: str | None = None,
+) -> dict[str, Any]:
+    """Fetch a blog post using the MCP HTTP-style contract.
+
+    Accepts either an ``id`` or ``url`` identifier.
+    """
+
+    del headers, body
+
+    method = method.upper()
+    if method != "GET":
+        return {
+            "status": {"code": 405, "text": "Method Not Allowed"},
+            "headers": {"Allow": "GET"},
+            "body": {"kind": "text", "text": ""},
+        }
+
+    identifier = url or id
+
+    if not identifier:
+        return {
+            "status": {"code": 400, "text": "Bad Request"},
+            "headers": {"Content-Type": "application/json"},
+            "body": {
+                "kind": "text",
+                "text": json.dumps({"error": "Either 'id' or 'url' must be provided"}),
+            },
+        }
+
+    slug = _extract_slug_from_url(identifier)
+    if not slug:
+        return {
+            "status": {"code": 400, "text": "Bad Request"},
+            "headers": {"Content-Type": "application/json"},
+            "body": {
+                "kind": "text",
+                "text": json.dumps({"error": "Unable to determine post slug from identifier"}),
+            },
+        }
+
     chroma_service = await get_chroma_service()
     post_summary, markdown = await chroma_service.get_post_markdown(slug)
 
     if not post_summary or markdown is None:
-        return {"error": f"Post with slug '{slug}' not found"}
+        return {
+            "status": {"code": 404, "text": "Not Found"},
+            "headers": {"Content-Type": "application/json"},
+            "body": {
+                "kind": "text",
+                "text": json.dumps({"error": "Post not found"}),
+            },
+        }
 
-    return {
-        "id": post_summary.id,
-        "slug": post_summary.slug,
+    resolved_url = _canonical_post_url(post_summary, identifier)
+    if not resolved_url:
+        logger.warning("Unable to resolve canonical URL for post %s", post_summary.id)
+        return {
+            "status": {"code": 502, "text": "Bad Gateway"},
+            "headers": {"Content-Type": "application/json"},
+            "body": {
+                "kind": "text",
+                "text": json.dumps({"error": "Unable to resolve canonical URL for post"}),
+            },
+        }
+
+    response_body = {
+        "id": resolved_url,
         "title": post_summary.title,
         "excerpt": post_summary.excerpt,
-        "url": post_summary.url,
+        "url": resolved_url,
         "published_at": post_summary.published_at.isoformat()
         if post_summary.published_at
         else None,
@@ -50,6 +155,12 @@ async def get_post(slug: str) -> dict[str, Any]:
         "tags": post_summary.tags,
         "authors": post_summary.authors,
         "markdown": markdown,
+    }
+
+    return {
+        "status": {"code": 200, "text": "OK"},
+        "headers": {"Content-Type": "application/json", "x-resolved-url": resolved_url},
+        "body": {"kind": "text", "text": json.dumps(response_body)},
     }
 
 
@@ -85,21 +196,28 @@ async def list_posts(
         sort_by=sort_by,
     )
 
-    return {
-        "posts": [
+    serialized_posts: list[dict[str, Any]] = []
+    for post in posts:
+        resolved_url = _canonical_post_url(post)
+        if not resolved_url:
+            logger.debug("Skipping post without canonical URL: %s", post.id)
+            continue
+
+        serialized_posts.append(
             {
-                "id": post.id,
-                "slug": post.slug,
+                "id": resolved_url,
                 "title": post.title,
                 "excerpt": post.excerpt,
-                "url": post.url,
+                "url": resolved_url,
                 "published_at": post.published_at.isoformat() if post.published_at else None,
                 "updated_at": post.updated_at.isoformat() if post.updated_at else None,
                 "tags": post.tags,
                 "authors": post.authors,
             }
-            for post in posts
-        ],
+        )
+
+    return {
+        "posts": serialized_posts,
         "pagination": {
             "page": page,
             "limit": limit,
@@ -129,11 +247,15 @@ async def search(
     chroma_service = await get_chroma_service()
     results = await chroma_service.search(query, limit)
 
-    return {
-        "query": query,
-        "results": [
+    serialized_results: list[dict[str, Any]] = []
+    for result in results:
+        if not result.post_url:
+            logger.debug("Skipping search result without canonical URL: %s", result.post_slug)
+            continue
+
+        serialized_results.append(
             {
-                "slug": result.post_slug,
+                "id": result.post_url,
                 "title": result.post_title,
                 "url": result.post_url,
                 "excerpt": result.excerpt,
@@ -141,7 +263,10 @@ async def search(
                 "published_at": result.published_at.isoformat() if result.published_at else None,
                 "tags": result.tags,
             }
-            for result in results
-        ],
-        "count": len(results),
+        )
+
+    return {
+        "query": query,
+        "results": serialized_results,
+        "count": len(serialized_results),
     }
