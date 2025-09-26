@@ -153,9 +153,11 @@ Running locally requires credentials for external services:
 
 ## MCP Tools
 
-- `fetch(id=None, url=None, method="GET", headers=None, body=None)`: Fetch a single blog post via the MCP fetch contract using the canonical post URL as the identifier. Provide either the `id` returned by `list_posts`/`search` (which is the canonical URL) or a `url`; Ghost slugs and shorthand schemes are also accepted but responses always resolve to full URLs.
-- `list_posts(sort_by, page, limit)`: List posts with pagination, returning canonical URLs as identifiers
-- `search(query, limit)`: Semantic search across posts that emits canonical URLs for result IDs
+- `fetch(id=None, url=None, method="GET", headers=None, body=None)`: Fetch a single blog post via the MCP fetch contract using the canonical post URL as the identifier. Provide either the `id` returned by `list_posts`/`search` or a `url`; Ghost slugs and shorthand schemes are also accepted but responses always resolve to full URLs.
+- `list_posts(sort_by, page, limit)`: List posts with pagination. Each entry's `id` is the canonical HTTPS URL for the post, matching the `url` field and the `x-resolved-url` response header.
+- `search(query, limit)`: Semantic search across posts. Each result's `id` is also the canonical post URL so it can be passed directly into `fetch`.
+
+> **ID field semantics:** All tools use the canonical post URL (e.g., `https://contraption.co/my-post/`) as their `id` value. This matches the `url` payload field so you can store the identifier as-is and reuse it across tool calls without additional lookups.
 
 ## API Endpoints
 
