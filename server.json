@@ -1,0 +1,16 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-09-29/server.schema.json",
+  "name": "co.contraption/mcp",
+  "description": "An MCP server that provides [describe what your server does]",
+  "repository": {
+    "url": "https://github.com/contraptionco/mcp",
+    "source": "github"
+  },
+  "version": "1.0.0",
+  "remotes": [
+    {
+      "type": "sse",
+      "url": "https://mcp.contraption.co/"
+    }
+  ]
+}

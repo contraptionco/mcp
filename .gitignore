@@ -111,3 +111,5 @@ temp/
 # CI/CD
 .github/workflows/*.local.yml
 .gitlab-ci.local.yml
+
+key.pem
