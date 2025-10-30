@@ -111,10 +111,10 @@ print(response)
 ## Features
 
 - Semantic Search: Uses Qwen3-Embedding-0.6B model for efficient semantic search
-- Automatic Indexing: Syncs with blog API on startup and via webhooks
+- Automatic Indexing: Syncs with the blog API on startup and via scheduled polling
 - Full Content Access: Uses Ghost Admin API to index all published content including members-only posts
 - Fast Performance: Powered by FastAPI and Chroma Cloud
-- Real-time Updates: Webhook support for instant post updates
+- Background Updates: Polls Ghost every few minutes for new, updated, or deleted posts
 - Docker Ready: Includes Dockerfile for easy deployment
 - Well Tested: Comprehensive test suite with pytest
 
@@ -162,6 +162,7 @@ Running locally requires credentials for external services:
 - **Ghost Admin API Key**: From your Ghost Admin panel (Settings > Integrations)
 - **Chroma Cloud Credentials**: Tenant ID, Database, and API key from Chroma Cloud
 - **Ghost Blog URL**: Your Ghost blog's URL
+- **Polling Interval (optional)**: Set `POLL_INTERVAL_SECONDS` to override the default 5 minute sync cadence
 
 ## MCP Tools
 
@@ -173,17 +174,11 @@ Running locally requires credentials for external services:
 
 - `GET /`: Server info (redirects to GitHub repo for non-MCP requests)
 - `GET /health`: Health check
-- `POST /webhook/ghost/{secret}`: Secure webhook endpoint for Ghost updates
 - `/mcp/*`: MCP protocol endpoints
 
-### Webhook Security
+### Background Sync
 
-The webhook endpoint requires a secret token in the URL path for security. Configure it in Ghost Admin:
-
-1. Go to Settings → Integrations → Webhooks
-2. Set URL to: `https://your-domain.com/webhook/ghost/{your-webhook-secret}`
-3. Replace `{your-webhook-secret}` with the value from your `.env` file
-4. Select events: Post published, Post updated, Post deleted
+The server polls the Ghost Admin API every 5 minutes to detect new, updated, or deleted posts. Adjust the cadence by setting the `POLL_INTERVAL_SECONDS` environment variable.
 
 ## Development
 

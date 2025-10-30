@@ -1,6 +1,5 @@
 import logging
 import re
-from typing import Any
 
 from bs4 import BeautifulSoup
 from markdownify import markdownify
@@ -166,7 +165,3 @@ class PostIndexer:
                 await self.chroma_service.delete_post(slug)
 
         logger.info("Full post indexing completed")
-
-    async def index_post_from_webhook(self, post_data: dict[str, Any]) -> None:
-        post = GhostPost(**post_data)
-        await self.index_post(post)

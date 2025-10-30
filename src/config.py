@@ -8,7 +8,7 @@ class Settings(BaseSettings):
     def __init__(self, **data: Any) -> None:
         super().__init__(**data)
 
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
+    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
     chroma_tenant: str = Field(description="Chroma Cloud tenant ID")
     chroma_database: str = Field(description="Chroma database name")
@@ -17,7 +17,12 @@ class Settings(BaseSettings):
 
     ghost_admin_api_key: str = Field(description="Ghost Admin API key")
     ghost_api_url: str = Field(description="Ghost API URL")
-    webhook_secret: str = Field(description="Secret token for webhook URL validation")
+
+    poll_interval_seconds: int = Field(
+        default=300,
+        ge=60,
+        description="Interval in seconds to poll Ghost for new or updated posts",
+    )
 
     chunk_size: int = Field(default=500, description="Maximum chunk size in words")
     chunk_overlap: int = Field(default=50, description="Overlap between chunks in words")
@@ -26,13 +31,13 @@ class Settings(BaseSettings):
     search_top_k: int = Field(default=10, description="Number of search results to return")
 
     dense_query_weight: float = Field(
-        default=0.5,
+        default=0.3,
         ge=0.0,
         le=1.0,
         description="Weight applied to dense similarity during hybrid search",
     )
     sparse_query_weight: float = Field(
-        default=0.5,
+        default=0.7,
         ge=0.0,
         le=1.0,
         description="Weight applied to sparse similarity during hybrid search",
