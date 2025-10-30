@@ -113,3 +113,4 @@ temp/
 .gitlab-ci.local.yml
 
 key.pem
+.mcpregistry_*
