@@ -1,13 +1,19 @@
 import logging
-from collections.abc import Iterable
-from typing import Any
+import os
+from collections.abc import Sequence
 
-import numpy as np
-import torch
 from chromadb.base_types import SparseVector
-from scipy import sparse as sp
-from sentence_transformers import SentenceTransformer
-from sentence_transformers.sparse_encoder import SparseEncoder
+from chromadb.utils.embedding_functions import (
+    ChromaCloudQwenEmbeddingFunction,
+    ChromaCloudSpladeEmbeddingFunction,
+)
+from chromadb.utils.embedding_functions.chroma_cloud_qwen_embedding_function import (
+    ChromaCloudQwenEmbeddingModel,
+    ChromaCloudQwenEmbeddingTask,
+)
+from chromadb.utils.embedding_functions.chroma_cloud_splade_embedding_function import (
+    ChromaCloudSpladeEmbeddingModel,
+)
 
 from src.config import settings
 
@@ -15,157 +21,87 @@ logger = logging.getLogger(__name__)
 
 
 class EmbeddingService:
+    """Thin wrapper around Chroma Cloud embedding endpoints for dense and sparse vectors."""
+
     def __init__(self) -> None:
-        self.model_name = settings.embedding_model
-        self.model: SentenceTransformer | None = None
-        self._device: str | None = None
-        self.sparse_model_name = settings.sparse_embedding_model
-        self.sparse_model: SparseEncoder | None = None
-        self._sparse_device: str | None = None
+        self._api_key_env_var = "CHROMA_API_KEY"
+        self._ensure_api_key()
+        self._dense_function = self._build_dense_function()
+        self._sparse_function = self._build_sparse_function()
 
-    def _get_device(self) -> str:
-        if self._device is None:
-            if torch.cuda.is_available():
-                self._device = "cuda"
-            elif torch.backends.mps.is_available():
-                self._device = "mps"
-            else:
-                self._device = "cpu"
-            logger.info(f"Using device: {self._device}")
-        return self._device
+    def _ensure_api_key(self) -> None:
+        """Ensure the Chroma Cloud API key is available for the embedding functions."""
+        if os.getenv(self._api_key_env_var):
+            return
 
-    def _load_model(self) -> None:
-        if self.model is None:
-            logger.info(f"Loading embedding model: {self.model_name}")
-            device = self._get_device()
-            self.model = SentenceTransformer(
-                self.model_name,
-                device=device,
-                trust_remote_code=True,
+        if not settings.chroma_api_key:
+            raise ValueError("Chroma API key must be configured to initialize embeddings")
+
+        os.environ[self._api_key_env_var] = settings.chroma_api_key
+        logger.debug("Configured Chroma Cloud API key environment variable for embeddings")
+
+    def _build_dense_function(self) -> ChromaCloudQwenEmbeddingFunction:
+        try:
+            return ChromaCloudQwenEmbeddingFunction(
+                model=ChromaCloudQwenEmbeddingModel.QWEN3_EMBEDDING_0p6B,
+                task=ChromaCloudQwenEmbeddingTask.NL_TO_CODE,  # TODO - change when we have additional task support :-)
+                api_key_env_var=self._api_key_env_var,
             )
-            logger.info("Embedding model loaded successfully")
+        except Exception as exc:  # pragma: no cover - configuration issues
+            logger.error("Failed to initialize dense embedding function: %s", exc)
+            raise
 
-    def _get_sparse_device(self) -> str:
-        if self._sparse_device is None:
-            if torch.cuda.is_available():
-                self._sparse_device = "cuda"
-            elif torch.backends.mps.is_available():
-                self._sparse_device = "mps"
-            else:
-                self._sparse_device = "cpu"
-            logger.info(f"Using sparse encoder device: {self._sparse_device}")
-        return self._sparse_device
-
-    def _load_sparse_model(self) -> None:
-        if self.sparse_model is None:
-            logger.info(f"Loading sparse embedding model: {self.sparse_model_name}")
-            device = self._get_sparse_device()
-            self.sparse_model = SparseEncoder(
-                self.sparse_model_name,
-                device=device,
-                trust_remote_code=True,
+    def _build_sparse_function(self) -> ChromaCloudSpladeEmbeddingFunction:
+        try:
+            return ChromaCloudSpladeEmbeddingFunction(
+                api_key_env_var=self._api_key_env_var,
+                model=ChromaCloudSpladeEmbeddingModel.SPLADE_PP_EN_V1,
             )
-            logger.info("Sparse embedding model loaded successfully")
+        except Exception as exc:  # pragma: no cover - configuration issues
+            logger.error("Failed to initialize sparse embedding function: %s", exc)
+            raise
 
-    @staticmethod
-    def _sparse_row_to_vector(row: Any) -> SparseVector:
-        if sp.issparse(row):
-            csr_row = row.tocsr()
-            indices = csr_row.indices.tolist()
-            values = csr_row.data.astype(float).tolist()
-            return {"indices": indices, "values": values}
+    @property
+    def dense_function(self) -> ChromaCloudQwenEmbeddingFunction:
+        return self._dense_function
 
-        if isinstance(row, torch.Tensor):
-            tensor = row.detach().cpu()
-            if tensor.is_sparse:
-                coalesced = tensor.coalesce()
-                indices_tensor = coalesced.indices()
-                # Sparse tensors store indices as 2 x nnz matrix for COO format.
-                if indices_tensor.shape[0] == 1:
-                    indices = indices_tensor[0].tolist()
-                else:
-                    indices = indices_tensor[1].tolist()
-                values = coalesced.values().tolist()
-                return {
-                    "indices": [int(idx) for idx in indices],
-                    "values": [float(val) for val in values],
-                }
-            arr = tensor.numpy().ravel()
-        else:
-            arr = np.asarray(row).ravel()
-
-        if arr.size == 0:
-            return {"indices": [], "values": []}
-
-        non_zero_indices = np.nonzero(arr)[0].tolist()
-        non_zero_values = [float(arr[idx]) for idx in non_zero_indices]
-        return {"indices": non_zero_indices, "values": non_zero_values}
-
-    @classmethod
-    def _extract_sparse_vectors(cls, encoded: Any) -> list[SparseVector]:
-        if encoded is None:
-            return []
-
-        if sp.issparse(encoded):
-            rows: Iterable[Any] = (encoded.getrow(i) for i in range(encoded.shape[0]))
-        elif isinstance(encoded, np.ndarray):
-            rows = [encoded] if encoded.ndim == 1 else (encoded[i] for i in range(encoded.shape[0]))
-        elif isinstance(encoded, list | tuple):
-            rows = encoded
-        else:
-            rows = [encoded]
-
-        vectors: list[SparseVector] = []
-        for row in rows:
-            vectors.append(cls._sparse_row_to_vector(row))
-        return vectors
+    @property
+    def sparse_function(self) -> ChromaCloudSpladeEmbeddingFunction:
+        return self._sparse_function
 
     def embed_texts(self, texts: list[str]) -> list[list[float]]:
         if not texts:
             return []
 
-        self._load_model()
-        assert self.model is not None
-
-        embeddings = self.model.encode(
-            texts,
-            batch_size=8,
-            show_progress_bar=False,
-            normalize_embeddings=True,
-        )
-
-        return embeddings.tolist()  # type: ignore[no-any-return]
+        embeddings = self._dense_function(texts)
+        return [self._ensure_sequence(embedding) for embedding in embeddings]
 
     def embed_text(self, text: str) -> list[float]:
         return self.embed_texts([text])[0]
+
+    def embed_queries(self, queries: list[str]) -> list[list[float]]:
+        if not queries:
+            return []
+
+        embeddings = self._dense_function.embed_query(queries)
+        return [self._ensure_sequence(embedding) for embedding in embeddings]
+
+    def embed_query(self, query: str) -> list[float]:
+        return self.embed_queries([query])[0]
 
     def sparse_embed_texts(self, texts: list[str]) -> list[SparseVector]:
         if not texts:
             return []
 
-        self._load_sparse_model()
-        assert self.sparse_model is not None
-
-        encoded = self.sparse_model.encode(
-            texts,
-            batch_size=8,
-            show_progress_bar=False,
-            convert_to_sparse_tensor=False,
-        )
-        return self._extract_sparse_vectors(encoded)
+        return list(self._sparse_function(texts))
 
     def sparse_embed_text(self, text: str) -> SparseVector:
         return self.sparse_embed_texts([text])[0]
 
-    def sparse_embed_query(self, text: str) -> SparseVector:
-        self._load_sparse_model()
-        assert self.sparse_model is not None
-
-        encoded = self.sparse_model.encode_query(
-            [text],
-            batch_size=8,
-            show_progress_bar=False,
-            convert_to_sparse_tensor=False,
-        )
-        vectors = self._extract_sparse_vectors(encoded)
+    def sparse_embed_query(self, query: str) -> SparseVector:
+        vectors = self._sparse_function([query])
         return vectors[0] if vectors else {"indices": [], "values": []}
+
+    @staticmethod
+    def _ensure_sequence(embedding: Sequence[float]) -> list[float]:
+        return [float(value) for value in embedding]

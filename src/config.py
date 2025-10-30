@@ -19,21 +19,12 @@ class Settings(BaseSettings):
     ghost_api_url: str = Field(description="Ghost API URL")
     webhook_secret: str = Field(description="Secret token for webhook URL validation")
 
-    embedding_model: str = Field(
-        default="Qwen/Qwen3-Embedding-0.6B", description="Sentence transformer model for embeddings"
-    )
-    embedding_dimension: int = Field(default=1024, description="Embedding dimension")
-
     chunk_size: int = Field(default=500, description="Maximum chunk size in words")
     chunk_overlap: int = Field(default=50, description="Overlap between chunks in words")
 
     max_posts_per_page: int = Field(default=10, description="Maximum posts per page")
     search_top_k: int = Field(default=10, description="Number of search results to return")
 
-    sparse_embedding_model: str = Field(
-        default="prithivida/Splade_PP_en_v1",
-        description="Sentence Transformers sparse encoder model for SPLADE-style embeddings",
-    )
     dense_query_weight: float = Field(
         default=0.5,
         ge=0.0,

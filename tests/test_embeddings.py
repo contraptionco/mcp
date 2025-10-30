@@ -1,18 +1,6 @@
 from datetime import datetime
 
-from scipy.sparse import csr_matrix
-
 from src.chroma_service import ChromaService
-from src.embeddings import EmbeddingService
-
-
-def test_extract_sparse_vectors_from_csr_matrix() -> None:
-    matrix = csr_matrix([[0.0, 1.5, 0.0, 0.25], [0.0, 0.0, 0.0, 0.0]])
-
-    vectors = EmbeddingService._extract_sparse_vectors(matrix)
-
-    assert vectors[0] == {"indices": [1, 3], "values": [1.5, 0.25]}
-    assert vectors[1] == {"indices": [], "values": []}
 
 
 def test_build_search_result_ignores_sparse_vector_metadata() -> None:

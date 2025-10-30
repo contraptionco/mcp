@@ -4,7 +4,16 @@ from datetime import datetime
 from typing import Any, cast
 
 import chromadb
-from chromadb.api.types import SearchResult as ChromaSearchResponse
+from chromadb.api.types import (
+    IntInvertedIndexConfig,
+    Schema,
+    SparseVectorIndexConfig,
+    StringInvertedIndexConfig,
+    VectorIndexConfig,
+)
+from chromadb.api.types import (
+    SearchResult as ChromaSearchResponse,
+)
 from chromadb.base_types import SparseVector
 from chromadb.execution.expression import Key, Knn, Rank, Search, Val
 from chromadb.types import Metadata
@@ -28,10 +37,34 @@ class ChromaService:
         self.collection_name = settings.chroma_collection
         self._ensure_collection()
 
+    def _build_schema(self) -> Schema:
+        schema = Schema()
+
+        vector_index = VectorIndexConfig(
+            embedding_function=self.embedding_service.dense_function,
+            source_key=Key.DOCUMENT,
+            space=self.embedding_service.dense_function.default_space(),
+        )
+        schema.create_index(config=vector_index)
+
+        sparse_index = SparseVectorIndexConfig(
+            embedding_function=self.embedding_service.sparse_function,
+        )
+        schema.create_index(config=sparse_index, key="sparse_vector")
+
+        for metadata_key in ("post_id", "post_slug", "post_title", "post_url", "tags", "authors"):
+            schema.create_index(config=StringInvertedIndexConfig(), key=metadata_key)
+
+        for metadata_key in ("chunk_index", "total_chunks"):
+            schema.create_index(config=IntInvertedIndexConfig(), key=metadata_key)
+
+        return schema
+
     def _ensure_collection(self) -> None:
         try:
             self.collection = self.client.get_or_create_collection(
                 name=self.collection_name,
+                schema=self._build_schema(),
             )
             logger.info(f"Connected to collection: {self.collection_name}")
         except Exception as e:
@@ -223,7 +256,7 @@ class ChromaService:
         ]
 
     async def search(self, query: str, limit: int = 10) -> list[PostSearchResult]:
-        dense_embedding = self.embedding_service.embed_text(query)
+        dense_embedding = self.embedding_service.embed_query(query)
         sparse_embedding = self.embedding_service.sparse_embed_query(query)
 
         results = self._hybrid_rrf_search(
