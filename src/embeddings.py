@@ -9,7 +9,6 @@ from chromadb.utils.embedding_functions import (
 )
 from chromadb.utils.embedding_functions.chroma_cloud_qwen_embedding_function import (
     ChromaCloudQwenEmbeddingModel,
-    ChromaCloudQwenEmbeddingTask,
 )
 from chromadb.utils.embedding_functions.chroma_cloud_splade_embedding_function import (
     ChromaCloudSpladeEmbeddingModel,
@@ -44,7 +43,6 @@ class EmbeddingService:
         try:
             return ChromaCloudQwenEmbeddingFunction(
                 model=ChromaCloudQwenEmbeddingModel.QWEN3_EMBEDDING_0p6B,
-                task=ChromaCloudQwenEmbeddingTask.NL_TO_CODE,  # TODO - change when we have additional task support :-)
                 api_key_env_var=self._api_key_env_var,
             )
         except Exception as exc:  # pragma: no cover - configuration issues
