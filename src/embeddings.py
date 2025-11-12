@@ -9,6 +9,7 @@ from chromadb.utils.embedding_functions import (
 )
 from chromadb.utils.embedding_functions.chroma_cloud_qwen_embedding_function import (
     ChromaCloudQwenEmbeddingModel,
+    ChromaCloudQwenEmbeddingTarget,
 )
 from chromadb.utils.embedding_functions.chroma_cloud_splade_embedding_function import (
     ChromaCloudSpladeEmbeddingModel,
@@ -17,6 +18,14 @@ from chromadb.utils.embedding_functions.chroma_cloud_splade_embedding_function i
 from src.config import settings
 
 logger = logging.getLogger(__name__)
+
+# Domain-specific embedding instructions for Qwen
+CHROMA_QWEN_INSTRUCTIONS: dict[str, dict[ChromaCloudQwenEmbeddingTarget, str]] = {
+    "contraption_blog": {
+        ChromaCloudQwenEmbeddingTarget.DOCUMENTS: "",
+        ChromaCloudQwenEmbeddingTarget.QUERY: "",
+    }
+}
 
 
 class EmbeddingService:
@@ -44,6 +53,8 @@ class EmbeddingService:
             return ChromaCloudQwenEmbeddingFunction(
                 model=ChromaCloudQwenEmbeddingModel.QWEN3_EMBEDDING_0p6B,
                 api_key_env_var=self._api_key_env_var,
+                task="contraption_blog",
+                instructions=CHROMA_QWEN_INSTRUCTIONS,
             )
         except Exception as exc:  # pragma: no cover - configuration issues
             logger.error("Failed to initialize dense embedding function: %s", exc)
