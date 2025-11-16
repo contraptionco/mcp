@@ -2,6 +2,10 @@
 
 An MCP (Model Context Protocol) server for [Contraption Company](https://contraption.co) essay, built on [Chroma Cloud](https://trychroma.com).
 
+<a href="https://glama.ai/mcp/servers/@contraptionco/mcp">
+  <img width="380" height="200" src="https://glama.ai/mcp/servers/@contraptionco/mcp/badge" alt="Contraption Company MCP server" />
+</a>
+
 ## How to Install
 
 Contraption Company MCP is available as a hosted MCP server with no authentication.
