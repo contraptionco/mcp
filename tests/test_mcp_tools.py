@@ -186,6 +186,10 @@ class TestMCPTools:
         assert len(result["results"]) == 1
         assert result["results"][0]["id"] == "https://example.com/post-1"
         assert "slug" not in result["results"][0]
-        assert result["results"][0]["relevance_score"] == 0.95
+        assert "relevance_score" not in result["results"][0]
         assert result["query"] == "test query"
-        mock_service.search.assert_called_once_with("test query", 5)
+        mock_service.search.assert_called_once_with(
+            "test query",
+            5,
+            distinct_results=False,
+        )

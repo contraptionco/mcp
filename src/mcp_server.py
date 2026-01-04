@@ -3,7 +3,8 @@ import logging
 from typing import Any
 from urllib.parse import urljoin, urlparse
 
-from fastapi import FastAPI, Query
+from fastapi import FastAPI, HTTPException, Query
+from fastapi.responses import RedirectResponse
 from fastmcp import FastMCP
 from starlette.routing import Mount
 
@@ -35,16 +36,30 @@ async def get_chroma_service() -> ChromaService:
 debug_app = FastAPI(title="Contraption MCP Debug", version="1.0.0")
 
 
+@debug_app.get("/", include_in_schema=False)
+async def debug_root() -> RedirectResponse:
+    return RedirectResponse(url="/debug/docs")
+
+
 @debug_app.get("/search")
 async def debug_search(
-    query: str = Query(..., min_length=1),
+    query: str = Query(..., min_length=3),
     limit: int = Query(10, ge=1),
+    distinct_results: bool = Query(False),
 ) -> dict[str, Any]:
+    query = query.strip()
+    if len(query) < 3:
+        raise HTTPException(status_code=400, detail="Query must be at least 3 characters")
+
     if limit > settings.search_top_k:
         limit = settings.search_top_k
 
     chroma_service = await get_chroma_service()
-    results = await chroma_service.search(query, limit)
+    results = await chroma_service.search(
+        query,
+        limit,
+        distinct_results=distinct_results,
+    )
 
     serialized_results: list[dict[str, Any]] = []
     for result in results:
@@ -57,7 +72,6 @@ async def debug_search(
                 "title": result.post_title,
                 "url": result.post_url,
                 "excerpt": result.excerpt,
-                "relevance_score": result.relevance_score,
                 "published_at": result.published_at.isoformat() if result.published_at else None,
                 "content_type": result.content_type,
                 "tags": result.tags,
@@ -68,6 +82,47 @@ async def debug_search(
         "query": query,
         "results": serialized_results,
         "count": len(serialized_results),
+    }
+
+
+@debug_app.get("/fetch")
+async def debug_fetch(
+    id: str = Query(..., min_length=1),
+) -> dict[str, Any]:
+    slug = _extract_slug_from_url(id)
+    if not slug:
+        raise HTTPException(
+            status_code=400, detail="Unable to determine content slug from identifier"
+        )
+
+    chroma_service = await get_chroma_service()
+    parsed = urlparse(id)
+    content_url = id if parsed.scheme in {"http", "https"} else None
+    post_summary, markdown = await chroma_service.get_post_markdown(
+        slug,
+        content_url=content_url,
+    )
+
+    if not post_summary or markdown is None:
+        raise HTTPException(status_code=404, detail="Content not found")
+
+    resolved_url = _canonical_post_url(post_summary, id)
+    if not resolved_url:
+        raise HTTPException(status_code=502, detail="Unable to resolve canonical URL for content")
+
+    return {
+        "id": resolved_url,
+        "title": post_summary.title,
+        "excerpt": post_summary.excerpt,
+        "url": resolved_url,
+        "published_at": post_summary.published_at.isoformat()
+        if post_summary.published_at
+        else None,
+        "updated_at": post_summary.updated_at.isoformat() if post_summary.updated_at else None,
+        "content_type": post_summary.content_type,
+        "tags": post_summary.tags,
+        "authors": post_summary.authors,
+        "markdown": markdown,
     }
 
 
@@ -270,22 +325,37 @@ async def list_posts(
 async def search(
     query: str,
     limit: int = 10,
+    distinct_results: bool = False,
 ) -> dict[str, Any]:
     """
     Search blog posts and pages using semantic search.
 
     Args:
-        query: Search query text
+        query: Search query text (minimum 3 characters)
         limit: Maximum number of results to return (default: 10)
+        distinct_results: When true, return unique results per URL (default: false)
 
     Returns:
         List of search results with relevance scores
     """
+    query = query.strip()
+    if len(query) < 3:
+        return {
+            "query": query,
+            "results": [],
+            "count": 0,
+            "error": "Query must be at least 3 characters",
+        }
+
     if limit > settings.search_top_k:
         limit = settings.search_top_k
 
     chroma_service = await get_chroma_service()
-    results = await chroma_service.search(query, limit)
+    results = await chroma_service.search(
+        query,
+        limit,
+        distinct_results=distinct_results,
+    )
 
     serialized_results: list[dict[str, Any]] = []
     for result in results:

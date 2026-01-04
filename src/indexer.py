@@ -1,6 +1,7 @@
 import hashlib
 import logging
 import re
+from typing import Any
 
 from bs4 import BeautifulSoup
 from markdownify import markdownify
@@ -103,6 +104,7 @@ class PostIndexer:
             if not chunk_text.strip():
                 continue
 
+            public_tags = self._filter_public_tags(post.tags)
             chunk = PostChunk(
                 post_id=post.id,
                 post_slug=post.slug,
@@ -115,12 +117,31 @@ class PostIndexer:
                 content_hash=content_hash,
                 published_at=post.published_at,
                 updated_at=post.updated_at,
-                tags=[tag.get("name", "") for tag in post.tags if tag.get("name")],
+                tags=public_tags,
                 authors=[author.get("name", "") for author in post.authors if author.get("name")],
             )
             chunks.append(chunk)
 
         return chunks, content_hash
+
+    @staticmethod
+    def _filter_public_tags(tags: list[dict[str, Any]]) -> list[str]:
+        public_tags: list[str] = []
+        for tag in tags:
+            name = str(tag.get("name", "")).strip()
+            if not name:
+                continue
+            visibility = tag.get("visibility")
+            if visibility is None:
+                if name.startswith("#"):
+                    continue
+            else:
+                if str(visibility).strip().lower() != "public":
+                    continue
+            if name.startswith("#"):
+                continue
+            public_tags.append(name)
+        return public_tags
 
     def _create_chunks(self, post: GhostPost) -> list[PostChunk]:
         chunks, _ = self._build_chunks_and_hash(post, "post")

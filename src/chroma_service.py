@@ -245,7 +245,9 @@ class ChromaService:
             published_at=self._parse_datetime(primary_metadata.get("published_at")),
             updated_at=self._parse_datetime(primary_metadata.get("updated_at")),
             content_type=self._normalize_content_type(primary_metadata.get("content_type")),
-            tags=self._split_comma_separated(primary_metadata.get("tags")),
+            tags=self._filter_public_tag_names(
+                self._split_comma_separated(primary_metadata.get("tags"))
+            ),
             authors=self._split_comma_separated(primary_metadata.get("authors")),
         )
 
@@ -296,9 +298,9 @@ class ChromaService:
                     "published_at": metadata.get("published_at"),
                     "updated_at": metadata.get("updated_at"),
                     "content_type": self._normalize_content_type(metadata.get("content_type")),
-                    "tags": str(metadata.get("tags", "")).split(",")
-                    if metadata.get("tags")
-                    else [],
+                    "tags": self._filter_public_tag_names(
+                        str(metadata.get("tags", "")).split(",") if metadata.get("tags") else []
+                    ),
                     "authors": str(metadata.get("authors", "")).split(",")
                     if metadata.get("authors")
                     else [],
@@ -331,14 +333,26 @@ class ChromaService:
             for p in paginated_posts
         ]
 
-    async def search(self, query: str, limit: int = 10) -> list[PostSearchResult]:
-        dense_embedding = self.embedding_service.embed_query(query)
+    async def search(
+        self,
+        query: str,
+        limit: int = 10,
+        *,
+        distinct_results: bool = False,
+    ) -> list[PostSearchResult]:
+        dense_embedding: list[float] | None = None
+        try:
+            dense_embedding = self.embedding_service.embed_query(query)
+        except Exception as exc:
+            logger.warning("Dense query embedding failed; falling back to sparse-only: %s", exc)
+
         sparse_embedding = self.embedding_service.sparse_embed_query(query)
 
         results, top_match = self._hybrid_rrf_search(
             dense_embedding=dense_embedding,
             sparse_embedding=sparse_embedding,
             limit=limit,
+            distinct_results=distinct_results,
         )
 
         # Console-friendly printout for quick debugging/inspection
@@ -367,6 +381,7 @@ class ChromaService:
         dense_embedding: list[float] | None,
         sparse_embedding: SparseVector | None,
         limit: int,
+        distinct_results: bool,
     ) -> tuple[list[PostSearchResult], dict[str, str | None]]:
         dense_weight = settings.dense_query_weight if dense_embedding else 0.0
         sparse_weight = settings.sparse_query_weight if sparse_embedding else 0.0
@@ -402,24 +417,30 @@ class ChromaService:
         if rank_expression is None:
             raise NotImplementedError("Rank expression could not be constructed")
 
-        group_by = getattr(chroma_expr, "GroupBy", None)
-        min_k = getattr(chroma_expr, "MinK", None)
-        if group_by is None or min_k is None:
-            raise RuntimeError("Chroma GroupBy support is unavailable; upgrade chromadb.")
-
         search_payload = (
             cast(Any, chroma_expr.Search())
             .rank(rank_expression)
-            .group_by(group_by(keys="post_url", aggregate=min_k(keys="#score", k=1)))
             .limit(max(limit * 3, limit))
             .select("#document", "#score", "#metadata", "post_title")
         )
+        if distinct_results:
+            group_by = getattr(chroma_expr, "GroupBy", None)
+            min_k = getattr(chroma_expr, "MinK", None)
+            if group_by is None or min_k is None:
+                raise RuntimeError("Chroma GroupBy support is unavailable; upgrade chromadb.")
+            search_payload = search_payload.group_by(
+                group_by(keys="post_url", aggregate=min_k(keys="#score", k=1))
+            )
 
         response = self.collection.search([search_payload])
-        return self._parse_search_response(response, limit)
+        return self._parse_search_response(response, limit, distinct_results=distinct_results)
 
     def _parse_search_response(
-        self, response: ChromaSearchResponse, limit: int
+        self,
+        response: ChromaSearchResponse,
+        limit: int,
+        *,
+        distinct_results: bool,
     ) -> tuple[list[PostSearchResult], dict[str, str | None]]:
         if not response.get("ids"):
             return [], {}
@@ -466,10 +487,11 @@ class ChromaService:
                 continue
 
             url = str(metadata.get("post_url", ""))
-            if url and url in seen_urls:
-                continue
-            if url:
-                seen_urls.add(url)
+            if distinct_results:
+                if url and url in seen_urls:
+                    continue
+                if url:
+                    seen_urls.add(url)
 
             excerpt_source = documents_payload[index] if index < len(documents_payload) else ""
             excerpt = excerpt_source[:300] if excerpt_source else ""
@@ -502,7 +524,9 @@ class ChromaService:
             relevance_score=score,
             published_at=ChromaService._parse_datetime(metadata.get("published_at")),
             content_type=ChromaService._normalize_content_type(metadata.get("content_type")),
-            tags=ChromaService._split_comma_separated(metadata.get("tags")),
+            tags=ChromaService._filter_public_tag_names(
+                ChromaService._split_comma_separated(metadata.get("tags"))
+            ),
         )
 
     @staticmethod
@@ -530,6 +554,10 @@ class ChromaService:
             return [str(item) for item in value if item]
 
         return [part.strip() for part in str(value).split(",") if part.strip()]
+
+    @staticmethod
+    def _filter_public_tag_names(tags: list[str]) -> list[str]:
+        return [tag for tag in tags if tag and not tag.startswith("#")]
 
     async def log_query(self, query: str, top_match: dict[str, str | None]) -> None:
         if not query:

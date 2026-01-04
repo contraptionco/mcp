@@ -96,16 +96,21 @@ class EmbeddingService:
         return [self._ensure_sequence(embedding) for embedding in embeddings]
 
     def embed_query(self, query: str) -> list[float]:
-        response = self._client.embed(
-            texts=[query],
+        response = self._client.contextualized_embed(
+            inputs=[[query]],
             model=self._model,
             input_type="query",
             output_dimension=self._output_dimension,
             output_dtype="float",
         )
-        if not response.embeddings:
+        if not response.results:
             raise ValueError("Voyage query embedding response contained no embeddings")
-        return self._ensure_sequence(response.embeddings[0])
+
+        embeddings = response.results[0].embeddings
+        if not embeddings:
+            raise ValueError("Voyage query embedding response contained no embeddings")
+
+        return self._ensure_sequence(embeddings[0])
 
     def sparse_embed_texts(self, texts: list[str]) -> list[SparseVector]:
         if not texts:
