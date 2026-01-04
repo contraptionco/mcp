@@ -29,7 +29,7 @@ class EmbeddingService:
         self._chroma_env_var = "CHROMA_API_KEY"
         self._ensure_voyage_api_key()
         self._ensure_chroma_api_key()
-        self._client = voyageai.Client(api_key=os.getenv(self._voyage_env_var))
+        self._client = cast(Any, voyageai).Client(api_key=os.getenv(self._voyage_env_var))
         self._model = "voyage-context-3"
         self._output_dimension = 2048
         self._sparse_function = self._build_sparse_function()
