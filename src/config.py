@@ -42,16 +42,16 @@ class Settings(BaseSettings):
     search_top_k: int = Field(default=10, description="Number of search results to return")
 
     dense_query_weight: float = Field(
-        default=0.5,
+        default=0.3,
         ge=0.0,
         le=1.0,
-        description="Weight applied to dense similarity during hybrid search (1:1 with sparse)",
+        description="Relative weight applied to dense similarity during hybrid search",
     )
     sparse_query_weight: float = Field(
-        default=0.5,
+        default=0.7,
         ge=0.0,
         le=1.0,
-        description="Weight applied to sparse similarity during hybrid search (1:1 with dense)",
+        description="Relative weight applied to sparse similarity during hybrid search",
     )
     hybrid_rrf_k: float = Field(
         default=42.0,
@@ -65,8 +65,6 @@ class Settings(BaseSettings):
             raise ValueError(
                 "At least one of dense_query_weight or sparse_query_weight must be > 0"
             )
-        if self.dense_query_weight != self.sparse_query_weight:
-            raise ValueError("dense_query_weight and sparse_query_weight must be equal")
         return self
 
 
