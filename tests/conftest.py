@@ -8,6 +8,8 @@ DEFAULT_ENV_VARS = {
     "CHROMA_DATABASE": "test-database",
     "CHROMA_API_KEY": "test-api-key",
     "CHROMA_COLLECTION": "test-collection",
+    "CHROMA_QUERY_COLLECTION": "test-queries",
+    "VOYAGE_API_KEY": "test-voyage-api-key",
     "GHOST_ADMIN_API_KEY": "test-ghost-admin",
     "GHOST_API_URL": "https://example.com",
 }

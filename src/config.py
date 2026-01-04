@@ -1,6 +1,6 @@
 from typing import Any
 
-from pydantic import Field, model_validator
+from pydantic import AliasChoices, Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -13,15 +13,26 @@ class Settings(BaseSettings):
     chroma_tenant: str = Field(description="Chroma Cloud tenant ID")
     chroma_database: str = Field(description="Chroma database name")
     chroma_api_key: str = Field(description="Chroma API key")
-    chroma_collection: str = Field(default="posts", description="Chroma collection name")
+    chroma_collection: str = Field(
+        default="content",
+        description="Chroma collection name",
+    )
+    chroma_query_collection: str = Field(
+        default="queries",
+        description="Chroma collection name for query logs",
+    )
 
     ghost_admin_api_key: str = Field(description="Ghost Admin API key")
     ghost_api_url: str = Field(description="Ghost API URL")
+    voyage_api_key: str = Field(
+        validation_alias=AliasChoices("VOYAGE_API_KEY", "VOYAGEAI_API_KEY"),
+        description="Voyage API key",
+    )
 
     poll_interval_seconds: int = Field(
         default=300,
         ge=60,
-        description="Interval in seconds to poll Ghost for new or updated posts",
+        description="Interval in seconds to poll Ghost for new or updated posts/pages",
     )
 
     chunk_size: int = Field(default=500, description="Maximum chunk size in words")
@@ -34,13 +45,13 @@ class Settings(BaseSettings):
         default=0.3,
         ge=0.0,
         le=1.0,
-        description="Weight applied to dense similarity during hybrid search",
+        description="Relative weight applied to dense similarity during hybrid search",
     )
     sparse_query_weight: float = Field(
         default=0.7,
         ge=0.0,
         le=1.0,
-        description="Weight applied to sparse similarity during hybrid search",
+        description="Relative weight applied to sparse similarity during hybrid search",
     )
     hybrid_rrf_k: float = Field(
         default=42.0,

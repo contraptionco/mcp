@@ -1,7 +1,9 @@
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
+
+ContentType = Literal["post", "page"]
 
 
 class GhostPost(BaseModel):
@@ -30,6 +32,8 @@ class PostChunk(BaseModel):
     chunk_text: str
     chunk_index: int
     total_chunks: int
+    content_type: ContentType = "post"
+    content_hash: str | None = None
     published_at: datetime | None
     updated_at: datetime | None
     tags: list[str] = Field(default_factory=list)
@@ -44,6 +48,7 @@ class PostSummary(BaseModel):
     url: str
     published_at: datetime | None
     updated_at: datetime | None
+    content_type: ContentType = "post"
     tags: list[str] = Field(default_factory=list)
     authors: list[str] = Field(default_factory=list)
 
@@ -55,6 +60,7 @@ class SearchResult(BaseModel):
     excerpt: str
     relevance_score: float
     published_at: datetime | None
+    content_type: ContentType = "post"
     tags: list[str] = Field(default_factory=list)
 
 

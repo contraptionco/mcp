@@ -39,7 +39,7 @@ class TestPostChunking:
 
         chunks = self.indexer._chunk_by_paragraphs(text)
 
-        assert len(chunks) > 0
+        assert len(chunks) == 3
         assert all(chunk.strip() for chunk in chunks)
 
     def test_create_chunks_from_post(self):
@@ -62,6 +62,7 @@ class TestPostChunking:
         assert all(isinstance(chunk, PostChunk) for chunk in chunks)
         assert chunks[0].post_slug == "test-post"
         assert chunks[0].post_title == "Test Post"
+        assert chunks[0].chunk_text == "Test Post"
         assert chunks[0].tags == ["test"]
         assert chunks[0].authors == ["Author"]
 
@@ -82,4 +83,4 @@ class TestPostChunking:
         assert len(chunks) > 1
         for chunk in chunks:
             words = chunk.chunk_text.split()
-            assert len(words) <= self.indexer.chunk_size + self.indexer.chunk_overlap
+            assert len(words) <= self.indexer.chunk_size

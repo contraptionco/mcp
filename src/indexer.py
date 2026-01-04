@@ -1,5 +1,7 @@
+import hashlib
 import logging
 import re
+from typing import Any
 
 from bs4 import BeautifulSoup
 from markdownify import markdownify
@@ -7,7 +9,7 @@ from markdownify import markdownify
 from src.chroma_service import ChromaService
 from src.config import settings
 from src.ghost_client import GhostAPIClient
-from src.models import GhostPost, PostChunk
+from src.models import ContentType, GhostPost, PostChunk
 
 logger = logging.getLogger(__name__)
 
@@ -32,71 +34,77 @@ class PostIndexer:
 
         return str(text)
 
-    def _chunk_by_paragraphs(self, text: str) -> list[str]:
-        paragraphs = re.split(r"\n\n+", text.strip())
-        paragraphs = [p.strip() for p in paragraphs if p.strip()]
+    def _extract_markdown(self, post: GhostPost) -> str | None:
+        if post.html:
+            markdown_text = str(markdownify(post.html))
+            logger.debug("Converted HTML to markdown, length: %s", len(markdown_text))
+            return markdown_text
+        if post.plaintext:
+            logger.debug("Using plaintext, length: %s", len(post.plaintext))
+            return post.plaintext
+        return None
 
-        chunks = []
-        current_chunk: list[str] = []
-        current_word_count = 0
-
+    def _split_paragraphs(self, text: str) -> list[str]:
+        paragraphs = re.split(r"\n\s*\n+", text.strip())
+        cleaned: list[str] = []
         for paragraph in paragraphs:
-            paragraph_words = paragraph.split()
-            paragraph_word_count = len(paragraph_words)
+            paragraph = paragraph.strip()
+            if not paragraph:
+                continue
+            cleaned.append(paragraph)
+        return cleaned
 
-            if paragraph_word_count > self.chunk_size:
-                if current_chunk:
-                    chunks.append(" ".join(current_chunk))
-                    current_chunk = []
-                    current_word_count = 0
+    def _chunk_by_paragraphs(self, text: str) -> list[str]:
+        paragraphs = self._split_paragraphs(text)
 
-                words = paragraph.split()
-                for i in range(0, len(words), self.chunk_size - self.chunk_overlap):
-                    chunk_words = words[i : i + self.chunk_size]
-                    chunks.append(" ".join(chunk_words))
-            elif current_word_count + paragraph_word_count > self.chunk_size:
-                chunks.append(" ".join(current_chunk))
-                current_chunk = [paragraph]
-                current_word_count = paragraph_word_count
-            else:
-                current_chunk.append(paragraph)
-                current_word_count += paragraph_word_count
+        chunks: list[str] = []
+        for paragraph in paragraphs:
+            words = paragraph.split()
+            if len(words) <= self.chunk_size:
+                chunks.append(paragraph)
+                continue
 
-        if current_chunk:
-            chunks.append(" ".join(current_chunk))
+            step = max(self.chunk_size - self.chunk_overlap, 1)
+            for i in range(0, len(words), step):
+                chunk_words = words[i : i + self.chunk_size]
+                chunks.append(" ".join(chunk_words))
 
         return chunks
 
-    def _create_chunks(self, post: GhostPost) -> list[PostChunk]:
-        logger.debug(f"Creating chunks for post: {post.slug}")
+    def _build_chunks_and_hash(
+        self, post: GhostPost, content_type: ContentType
+    ) -> tuple[list[PostChunk], str | None]:
+        logger.debug("Creating chunks for %s: %s", content_type, post.slug)
         logger.debug(
-            f"Post has html: {bool(post.html)}, length: {len(post.html) if post.html else 0}"
+            "Content has html: %s, plaintext: %s",
+            bool(post.html),
+            bool(post.plaintext),
         )
-        logger.debug(
-            f"Post has plaintext: {bool(post.plaintext)}, length: {len(post.plaintext) if post.plaintext else 0}"
-        )
 
-        # Convert HTML to markdown for better formatting
-        if post.html:
-            markdown_text = markdownify(post.html)
-            logger.debug(f"Converted HTML to markdown, length: {len(markdown_text)}")
-        elif post.plaintext:
-            markdown_text = post.plaintext
-            logger.debug(f"Using plaintext, length: {len(post.plaintext)}")
-        else:
-            logger.warning(f"Post {post.slug} has no content to index")
-            return []
+        chunks_text: list[str] = []
+        if post.title:
+            chunks_text.append(post.title.strip())
 
-        text_chunks = self._chunk_by_paragraphs(markdown_text)
+        subtitle = post.custom_excerpt or post.meta_description
+        if subtitle:
+            chunks_text.append(subtitle.strip())
 
-        if not text_chunks:
-            text_chunks = [markdown_text[: self.chunk_size * 5]]
+        markdown_text = self._extract_markdown(post)
+        if markdown_text:
+            chunks_text.extend(self._chunk_by_paragraphs(markdown_text))
+
+        if not chunks_text:
+            logger.warning("%s %s has no content to index", content_type, post.slug)
+            return [], None
+
+        content_hash = hashlib.sha256("\n\n".join(chunks_text).encode("utf-8")).hexdigest()
 
         chunks = []
-        for i, chunk_text in enumerate(text_chunks):
+        for i, chunk_text in enumerate(chunks_text):
             if not chunk_text.strip():
                 continue
 
+            public_tags = self._filter_public_tags(post.tags)
             chunk = PostChunk(
                 post_id=post.id,
                 post_slug=post.slug,
@@ -104,64 +112,129 @@ class PostIndexer:
                 post_url=post.url or f"{settings.ghost_api_url}/{post.slug}/",
                 chunk_text=chunk_text,
                 chunk_index=i,
-                total_chunks=len(text_chunks),
+                total_chunks=len(chunks_text),
+                content_type=content_type,
+                content_hash=content_hash,
                 published_at=post.published_at,
                 updated_at=post.updated_at,
-                tags=[tag.get("name", "") for tag in post.tags if tag.get("name")],
+                tags=public_tags,
                 authors=[author.get("name", "") for author in post.authors if author.get("name")],
             )
             chunks.append(chunk)
 
+        return chunks, content_hash
+
+    @staticmethod
+    def _filter_public_tags(tags: list[dict[str, Any]]) -> list[str]:
+        public_tags: list[str] = []
+        for tag in tags:
+            name = str(tag.get("name", "")).strip()
+            if not name:
+                continue
+            visibility = tag.get("visibility")
+            if visibility is None:
+                if name.startswith("#"):
+                    continue
+            else:
+                if str(visibility).strip().lower() != "public":
+                    continue
+            if name.startswith("#"):
+                continue
+            public_tags.append(name)
+        return public_tags
+
+    def _create_chunks(self, post: GhostPost) -> list[PostChunk]:
+        chunks, _ = self._build_chunks_and_hash(post, "post")
         return chunks
 
-    async def index_post(self, post: GhostPost) -> None:
-        logger.info(f"Indexing post: {post.slug}")
+    async def index_post(
+        self,
+        post: GhostPost,
+        *,
+        content_type: ContentType = "post",
+        chunks: list[PostChunk] | None = None,
+    ) -> None:
+        logger.info("Indexing %s: %s", content_type, post.slug)
         logger.debug(
-            f"Post details - Title: {post.title}, Has HTML: {bool(post.html)}, Has plaintext: {bool(post.plaintext)}"
+            "Content details - Title: %s, Has HTML: %s, Has plaintext: %s",
+            post.title,
+            bool(post.html),
+            bool(post.plaintext),
         )
 
-        await self.chroma_service.delete_post(post.slug)
+        await self.chroma_service.delete_post(post.slug, content_type=content_type)
 
-        chunks = self._create_chunks(post)
+        if chunks is None:
+            chunks, _ = self._build_chunks_and_hash(post, content_type)
+
         if chunks:
             await self.chroma_service.upsert_chunks(chunks)
-            logger.info(f"Indexed {len(chunks)} chunks for post: {post.slug}")
+            logger.info("Indexed %s chunks for %s: %s", len(chunks), content_type, post.slug)
         else:
-            logger.warning(f"No chunks created for post: {post.slug}")
+            logger.warning("No chunks created for %s: %s", content_type, post.slug)
 
     async def index_all_posts(self) -> None:
-        logger.info("Starting full post indexing")
+        logger.info("Starting full content indexing")
 
         posts = await self.ghost_client.get_all_posts()
-        indexed_slugs = await self.chroma_service.get_indexed_post_slugs()
+        pages = await self.ghost_client.get_all_pages()
+        content_items: list[tuple[GhostPost, ContentType]] = [(post, "post") for post in posts] + [
+            (page, "page") for page in pages
+        ]
 
-        new_posts = []
-        updated_posts = []
+        indexed_content = await self.chroma_service.get_indexed_content_index()
 
-        for post in posts:
+        new_items: list[tuple[GhostPost, ContentType, list[PostChunk]]] = []
+        updated_items: list[tuple[GhostPost, ContentType, list[PostChunk]]] = []
+        current_keys: set[tuple[str, ContentType]] = set()
+
+        for content, content_type in content_items:
             logger.debug(
-                f"Checking post {post.slug}: has_html={bool(post.html)}, has_plaintext={bool(post.plaintext)}"
+                "Checking %s %s: has_html=%s, has_plaintext=%s",
+                content_type,
+                content.slug,
+                bool(content.html),
+                bool(content.plaintext),
             )
-            if post.slug not in indexed_slugs:
-                new_posts.append(post)
-            else:
-                existing_post = await self.chroma_service.get_post_by_slug(post.slug)
-                if (
-                    existing_post
-                    and post.updated_at
-                    and existing_post.updated_at
-                    and post.updated_at > existing_post.updated_at
-                ):
-                    updated_posts.append(post)
+            key = (content.slug, content_type)
+            current_keys.add(key)
 
-        logger.info(f"Found {len(new_posts)} new posts and {len(updated_posts)} updated posts")
+            chunks, content_hash = self._build_chunks_and_hash(content, content_type)
+            if not chunks:
+                if key in indexed_content:
+                    logger.info("Removing empty %s from index: %s", content_type, content.slug)
+                    await self.chroma_service.delete_post(content.slug, content_type=content_type)
+                continue
 
-        for post in new_posts + updated_posts:
-            await self.index_post(post)
+            existing = indexed_content.get(key)
+            if not existing:
+                new_items.append((content, content_type, chunks))
+                continue
 
-        for slug in indexed_slugs:
-            if slug not in {p.slug for p in posts}:
-                logger.info(f"Removing deleted post from index: {slug}")
-                await self.chroma_service.delete_post(slug)
+            hash_changed = content_hash != existing.get("content_hash")
+            updated_at = content.updated_at
+            existing_updated_at = existing.get("updated_at")
+            updated = (
+                updated_at is not None
+                and existing_updated_at is not None
+                and updated_at > existing_updated_at
+            )
 
-        logger.info("Full post indexing completed")
+            if hash_changed or updated:
+                updated_items.append((content, content_type, chunks))
+
+        logger.info(
+            "Found %s new items and %s updated items",
+            len(new_items),
+            len(updated_items),
+        )
+
+        for content, content_type, chunks in new_items + updated_items:
+            await self.index_post(content, content_type=content_type, chunks=chunks)
+
+        for slug, indexed_content_type in indexed_content:
+            if (slug, indexed_content_type) not in current_keys:
+                logger.info("Removing deleted %s from index: %s", indexed_content_type, slug)
+                await self.chroma_service.delete_post(slug, content_type=indexed_content_type)
+
+        logger.info("Full content indexing completed")

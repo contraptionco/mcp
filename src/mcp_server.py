@@ -3,7 +3,10 @@ import logging
 from typing import Any
 from urllib.parse import urljoin, urlparse
 
+from fastapi import FastAPI, HTTPException, Query
+from fastapi.responses import RedirectResponse
 from fastmcp import FastMCP
+from starlette.routing import Mount
 
 from src.chroma_service import ChromaService
 from src.config import settings
@@ -30,19 +33,116 @@ async def get_chroma_service() -> ChromaService:
     return _chroma_service
 
 
+debug_app = FastAPI(title="Contraption MCP Debug", version="1.0.0")
+
+
+@debug_app.get("/", include_in_schema=False)
+async def debug_root() -> RedirectResponse:
+    return RedirectResponse(url="/debug/docs")
+
+
+@debug_app.get("/search")
+async def debug_search(
+    query: str = Query(..., min_length=3),
+    limit: int = Query(10, ge=1),
+    distinct_results: bool = Query(False),
+) -> dict[str, Any]:
+    query = query.strip()
+    if len(query) < 3:
+        raise HTTPException(status_code=400, detail="Query must be at least 3 characters")
+
+    if limit > settings.search_top_k:
+        limit = settings.search_top_k
+
+    chroma_service = await get_chroma_service()
+    results = await chroma_service.search(
+        query,
+        limit,
+        distinct_results=distinct_results,
+    )
+
+    serialized_results: list[dict[str, Any]] = []
+    for result in results:
+        if not result.post_url:
+            continue
+
+        serialized_results.append(
+            {
+                "id": result.post_url,
+                "title": result.post_title,
+                "url": result.post_url,
+                "excerpt": result.excerpt,
+                "published_at": result.published_at.isoformat() if result.published_at else None,
+                "content_type": result.content_type,
+                "tags": result.tags,
+            }
+        )
+
+    return {
+        "query": query,
+        "results": serialized_results,
+        "count": len(serialized_results),
+    }
+
+
+@debug_app.get("/fetch")
+async def debug_fetch(
+    id: str = Query(..., min_length=1),
+) -> dict[str, Any]:
+    slug = _extract_slug_from_url(id)
+    if not slug:
+        raise HTTPException(
+            status_code=400, detail="Unable to determine content slug from identifier"
+        )
+
+    chroma_service = await get_chroma_service()
+    parsed = urlparse(id)
+    content_url = id if parsed.scheme in {"http", "https"} else None
+    post_summary, markdown = await chroma_service.get_post_markdown(
+        slug,
+        content_url=content_url,
+    )
+
+    if not post_summary or markdown is None:
+        raise HTTPException(status_code=404, detail="Content not found")
+
+    resolved_url = _canonical_post_url(post_summary, id)
+    if not resolved_url:
+        raise HTTPException(status_code=502, detail="Unable to resolve canonical URL for content")
+
+    return {
+        "id": resolved_url,
+        "title": post_summary.title,
+        "excerpt": post_summary.excerpt,
+        "url": resolved_url,
+        "published_at": post_summary.published_at.isoformat()
+        if post_summary.published_at
+        else None,
+        "updated_at": post_summary.updated_at.isoformat() if post_summary.updated_at else None,
+        "content_type": post_summary.content_type,
+        "tags": post_summary.tags,
+        "authors": post_summary.authors,
+        "markdown": markdown,
+    }
+
+
+# Mount a small debug API with Swagger UI at /debug.
+mcp._additional_http_routes.append(Mount("/debug", app=debug_app))
+
+
 def _extract_slug_from_url(url: str) -> str | None:
     """Extract a post slug from user input.
 
     The MCP contract references HTTP-style requests, so we support a few shapes:
 
-    - ``post://{slug}`` or ``ghost://{slug}`` custom schemes
+    - ``post://{slug}``, ``page://{slug}``, or ``ghost://{slug}`` custom schemes
     - Fully qualified Ghost URLs (``https://example.com/posts/{slug}``)
     - Bare slugs with no scheme
     """
 
     parsed = urlparse(url)
 
-    if parsed.scheme in {"post", "ghost", ""}:
+    if parsed.scheme in {"post", "page", "ghost", ""}:
         if parsed.path and parsed.path.strip("/"):
             return parsed.path.strip("/")
         if parsed.netloc:
@@ -59,7 +159,7 @@ def _extract_slug_from_url(url: str) -> str | None:
 
 
 def _canonical_post_url(post_summary: PostSummary, fallback_url: str | None = None) -> str | None:
-    """Resolve a canonical, HTTP(S) URL for a post."""
+    """Resolve a canonical, HTTP(S) URL for a post or page."""
 
     if post_summary.url:
         return post_summary.url
@@ -81,7 +181,7 @@ def _canonical_post_url(post_summary: PostSummary, fallback_url: str | None = No
 
 @mcp.tool(name="fetch")
 async def fetch(id: str) -> dict[str, Any]:
-    """Fetch a blog post using the MCP HTTP-style contract.
+    """Fetch a blog post or page using the MCP HTTP-style contract.
 
     Accepts an ``id`` that can be a slug, canonical URL, or a ``post://`` style identifier.
     """
@@ -103,12 +203,17 @@ async def fetch(id: str) -> dict[str, Any]:
             "headers": {"Content-Type": "application/json"},
             "body": {
                 "kind": "text",
-                "text": json.dumps({"error": "Unable to determine post slug from identifier"}),
+                "text": json.dumps({"error": "Unable to determine content slug from identifier"}),
             },
         }
 
     chroma_service = await get_chroma_service()
-    post_summary, markdown = await chroma_service.get_post_markdown(slug)
+    parsed = urlparse(id)
+    content_url = id if parsed.scheme in {"http", "https"} else None
+    post_summary, markdown = await chroma_service.get_post_markdown(
+        slug,
+        content_url=content_url,
+    )
 
     if not post_summary or markdown is None:
         return {
@@ -116,19 +221,19 @@ async def fetch(id: str) -> dict[str, Any]:
             "headers": {"Content-Type": "application/json"},
             "body": {
                 "kind": "text",
-                "text": json.dumps({"error": "Post not found"}),
+                "text": json.dumps({"error": "Content not found"}),
             },
         }
 
     resolved_url = _canonical_post_url(post_summary, id)
     if not resolved_url:
-        logger.warning("Unable to resolve canonical URL for post %s", post_summary.id)
+        logger.warning("Unable to resolve canonical URL for content %s", post_summary.id)
         return {
             "status": {"code": 502, "text": "Bad Gateway"},
             "headers": {"Content-Type": "application/json"},
             "body": {
                 "kind": "text",
-                "text": json.dumps({"error": "Unable to resolve canonical URL for post"}),
+                "text": json.dumps({"error": "Unable to resolve canonical URL for content"}),
             },
         }
 
@@ -141,6 +246,7 @@ async def fetch(id: str) -> dict[str, Any]:
         if post_summary.published_at
         else None,
         "updated_at": post_summary.updated_at.isoformat() if post_summary.updated_at else None,
+        "content_type": post_summary.content_type,
         "tags": post_summary.tags,
         "authors": post_summary.authors,
         "markdown": markdown,
@@ -219,22 +325,37 @@ async def list_posts(
 async def search(
     query: str,
     limit: int = 10,
+    distinct_results: bool = False,
 ) -> dict[str, Any]:
     """
-    Search blog posts using semantic search.
+    Search blog posts and pages using semantic search.
 
     Args:
-        query: Search query text
+        query: Search query text (minimum 3 characters)
         limit: Maximum number of results to return (default: 10)
+        distinct_results: When true, return unique results per URL (default: false)
 
     Returns:
-        List of search results with relevance scores
+        List of search results.
     """
+    query = query.strip()
+    if len(query) < 3:
+        return {
+            "query": query,
+            "results": [],
+            "count": 0,
+            "error": "Query must be at least 3 characters",
+        }
+
     if limit > settings.search_top_k:
         limit = settings.search_top_k
 
     chroma_service = await get_chroma_service()
-    results = await chroma_service.search(query, limit)
+    results = await chroma_service.search(
+        query,
+        limit,
+        distinct_results=distinct_results,
+    )
 
     serialized_results: list[dict[str, Any]] = []
     for result in results:
@@ -248,8 +369,8 @@ async def search(
                 "title": result.post_title,
                 "url": result.post_url,
                 "excerpt": result.excerpt,
-                "relevance_score": result.relevance_score,
                 "published_at": result.published_at.isoformat() if result.published_at else None,
+                "content_type": result.content_type,
                 "tags": result.tags,
             }
         )

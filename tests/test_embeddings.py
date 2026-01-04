@@ -23,3 +23,22 @@ def test_build_search_result_ignores_sparse_vector_metadata() -> None:
     assert result.post_slug == "hybrid-search"
     assert result.tags == ["search", "hybrid"]
     assert result.relevance_score == 0.8
+
+
+def test_build_search_result_filters_internal_tags() -> None:
+    published = datetime.now().isoformat()
+    metadata = {
+        "post_slug": "public-tags",
+        "post_title": "Public Tags",
+        "post_url": "https://example.com/public-tags",
+        "tags": "alpha,#internal,beta",
+        "published_at": published,
+    }
+
+    result = ChromaService._build_search_result_from_metadata(
+        metadata=metadata,
+        excerpt="Example excerpt",
+        score=0.7,
+    )
+
+    assert result.tags == ["alpha", "beta"]
