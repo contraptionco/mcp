@@ -336,7 +336,7 @@ async def search(
         distinct_results: When true, return unique results per URL (default: false)
 
     Returns:
-        List of search results with relevance scores
+        List of search results.
     """
     query = query.strip()
     if len(query) < 3:
@@ -369,7 +369,6 @@ async def search(
                 "title": result.post_title,
                 "url": result.post_url,
                 "excerpt": result.excerpt,
-                "relevance_score": result.relevance_score,
                 "published_at": result.published_at.isoformat() if result.published_at else None,
                 "content_type": result.content_type,
                 "tags": result.tags,
