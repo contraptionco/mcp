@@ -48,7 +48,7 @@ class TestMCPTools:
         assert body["markdown"] == "# Markdown content"
         assert "slug" not in body
         assert result["headers"]["x-resolved-url"] == "https://example.com/test-post"
-        mock_service.get_post_markdown.assert_awaited_once_with("test-post")
+        mock_service.get_post_markdown.assert_awaited_once_with("test-post", content_url=None)
 
     @pytest.mark.asyncio
     @patch("src.mcp_server.get_chroma_service")
@@ -78,7 +78,10 @@ class TestMCPTools:
         body = json.loads(result["body"]["text"])
         assert body["id"] == "https://example.com/test-post"
         assert "slug" not in body
-        mock_service.get_post_markdown.assert_awaited_once_with("test-post")
+        mock_service.get_post_markdown.assert_awaited_once_with(
+            "test-post",
+            content_url="https://example.com/blog/test-post",
+        )
 
     @pytest.mark.asyncio
     @patch("src.mcp_server.get_chroma_service")
@@ -95,7 +98,10 @@ class TestMCPTools:
         body = json.loads(result["body"]["text"])
         assert "error" in body
         assert "not found" in body["error"]
-        mock_service.get_post_markdown.assert_awaited_once_with("nonexistent")
+        mock_service.get_post_markdown.assert_awaited_once_with(
+            "nonexistent",
+            content_url=None,
+        )
 
     @pytest.mark.asyncio
     async def test_fetch_requires_identifier(self):

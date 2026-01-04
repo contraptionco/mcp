@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 
 
 async def index_posts_background(poll_interval_seconds: int | None = None) -> None:
-    """Continuously index posts in the background at a fixed polling interval."""
+    """Continuously index posts and pages in the background at a fixed polling interval."""
     interval = poll_interval_seconds or settings.poll_interval_seconds
     chroma_service = ChromaService()
 
@@ -45,7 +45,7 @@ async def index_posts_background(poll_interval_seconds: int | None = None) -> No
 async def main() -> None:
     """Main function to run the MCP HTTP server."""
     logger.info("Starting Contraption Company MCP server on http://localhost:8000")
-    logger.info("Existing posts are available immediately")
+    logger.info("Existing posts and pages are available immediately")
 
     # Start background indexing (non-blocking)
     asyncio.create_task(index_posts_background())

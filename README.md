@@ -110,11 +110,12 @@ print(response)
 
 ## Features
 
-- Semantic Search: Uses Qwen3-Embedding-0.6B model for efficient semantic search
+- Semantic Search: Hybrid search with Voyage contextualized embeddings + sparse Splade vectors
 - Automatic Indexing: Syncs with the blog API on startup and via scheduled polling
-- Full Content Access: Uses Ghost Admin API to index all published content including members-only posts
+- Full Content Access: Uses Ghost Admin API to index all published posts and pages, including members-only posts
 - Fast Performance: Powered by FastAPI and Chroma Cloud
-- Background Updates: Polls Ghost every few minutes for new, updated, or deleted posts
+- Background Updates: Polls Ghost every few minutes for new, updated, or deleted posts and pages
+- Query Logging: Records searches in a dedicated Chroma collection for analysis
 - Docker Ready: Includes Dockerfile for easy deployment
 - Well Tested: Comprehensive test suite with pytest
 
@@ -161,24 +162,27 @@ Running locally requires credentials for external services:
 
 - **Ghost Admin API Key**: From your Ghost Admin panel (Settings > Integrations)
 - **Chroma Cloud Credentials**: Tenant ID, Database, and API key from Chroma Cloud
+- **Chroma Query Collection (optional)**: Set `CHROMA_QUERY_COLLECTION` to override the default `queries` collection
+- **Voyage API Key**: Required to generate contextualized embeddings
 - **Ghost Blog URL**: Your Ghost blog's URL
 - **Polling Interval (optional)**: Set `POLL_INTERVAL_SECONDS` to override the default 5 minute sync cadence
 
 ## MCP Tools
 
-- `fetch(id=None, url=None, method="GET", headers=None, body=None)`: Fetch a single blog post via the MCP fetch contract using the canonical post URL as the identifier. Provide either the `id` returned by `list_posts`/`search` (which is the canonical URL) or a `url`; Ghost slugs and shorthand schemes are also accepted but responses always resolve to full URLs.
+- `fetch(id=None, url=None, method="GET", headers=None, body=None)`: Fetch a single post or page via the MCP fetch contract using the canonical URL as the identifier. Provide either the `id` returned by `list_posts`/`search` (which is the canonical URL) or a `url`; Ghost slugs and shorthand schemes are also accepted but responses always resolve to full URLs.
 - `list_posts(sort_by, page, limit)`: List posts with pagination, returning canonical URLs as identifiers
-- `search(query, limit)`: Semantic search across posts that emits canonical URLs for result IDs
+- `search(query, limit)`: Semantic search across posts and pages that emits canonical URLs for result IDs
 
 ## API Endpoints
 
 - `GET /`: Server info (redirects to GitHub repo for non-MCP requests)
 - `GET /health`: Health check
+- `GET /debug/search`: Debug search endpoint (see `/debug/docs` for Swagger UI)
 - `/mcp/*`: MCP protocol endpoints
 
 ### Background Sync
 
-The server polls the Ghost Admin API every 5 minutes to detect new, updated, or deleted posts. Adjust the cadence by setting the `POLL_INTERVAL_SECONDS` environment variable.
+The server polls the Ghost Admin API every 5 minutes to detect new, updated, or deleted posts and pages. Adjust the cadence by setting the `POLL_INTERVAL_SECONDS` environment variable.
 
 ## Development
 
