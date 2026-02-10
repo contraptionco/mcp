@@ -85,6 +85,64 @@ async def debug_search(
     }
 
 
+@debug_app.get("/query-log-test")
+async def debug_query_log_test(
+    query: str = Query("test query", min_length=1),
+) -> dict[str, Any]:
+    """Test query logging to verify it's working."""
+    import time
+    chroma_service = await get_chroma_service()
+    timestamp = int(time.time())
+    top_match = {"post_id": "test", "post_url": "https://contraption.co/test"}
+    
+    try:
+        await chroma_service.log_query(query, top_match)
+        # Give the background task a moment to complete
+        import asyncio
+        await asyncio.sleep(1)
+        return {
+            "status": "ok",
+            "message": f"Query '{query}' logged successfully (check Chroma queries collection)",
+            "timestamp": timestamp,
+        }
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": str(e),
+            "timestamp": timestamp,
+        }
+
+
+@debug_app.get("/query-log-stats")
+async def debug_query_log_stats() -> dict[str, Any]:
+    """Get stats about logged queries."""
+    chroma_service = await get_chroma_service()
+    try:
+        count = chroma_service.query_collection.count()
+        # Get recent queries
+        recent = chroma_service.query_collection.get(limit=10)
+        recent_queries = []
+        if recent.get("documents"):
+            for i, doc in enumerate(recent["documents"]):
+                metadata = recent["metadatas"][i] if recent.get("metadatas") else {}
+                recent_queries.append({
+                    "query": doc,
+                    "timestamp": metadata.get("query_ts"),
+                    "top_match_url": metadata.get("top_match_url"),
+                })
+        return {
+            "status": "ok",
+            "total_logged_queries": count,
+            "collection_name": chroma_service.query_collection_name,
+            "recent_queries": recent_queries,
+        }
+    except Exception as e:
+        return {
+            "status": "error", 
+            "message": str(e),
+        }
+
+
 @debug_app.get("/fetch")
 async def debug_fetch(
     id: str = Query(..., min_length=1),

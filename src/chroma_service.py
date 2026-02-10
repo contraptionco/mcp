@@ -567,7 +567,7 @@ class ChromaService:
         try:
             await asyncio.to_thread(self._log_query_sync, query, timestamp, top_match)
         except Exception as exc:  # pragma: no cover - non-blocking logging
-            logger.warning("Failed to log query asynchronously: %s", exc)
+            logger.error("Failed to log query asynchronously: %s", exc, exc_info=True)
 
     def _log_query_sync(
         self,
@@ -598,7 +598,7 @@ class ChromaService:
                 metadatas=[metadata],
             )
         except Exception as exc:  # pragma: no cover - best-effort logging
-            logger.warning("Failed to log query in Chroma: %s", exc)
+            logger.error("Failed to log query '%s' to Chroma: %s", query[:50], exc, exc_info=True)
         finally:
             query_embedding_service.close()
 
