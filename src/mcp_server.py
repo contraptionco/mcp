@@ -94,7 +94,10 @@ async def debug_query_log_test(
 
     chroma_service = await get_chroma_service()
     timestamp = int(time.time())
-    top_match = {"post_id": "test", "post_url": "https://contraption.co/test"}
+    top_match: dict[str, str | None] = {
+        "post_id": "test",
+        "post_url": "https://contraption.co/test",
+    }
 
     try:
         await chroma_service.log_query(query, top_match)
@@ -124,16 +127,17 @@ async def debug_query_log_stats() -> dict[str, Any]:
         # Get recent queries
         recent = chroma_service.query_collection.get(limit=10)
         recent_queries = []
-        if recent.get("documents"):
-            for i, doc in enumerate(recent["documents"]):
-                metadata = recent["metadatas"][i] if recent.get("metadatas") else {}
-                recent_queries.append(
-                    {
-                        "query": doc,
-                        "timestamp": metadata.get("query_ts"),
-                        "top_match_url": metadata.get("top_match_url"),
-                    }
-                )
+        documents = recent.get("documents") or []
+        metadatas = recent.get("metadatas") or []
+        for i, doc in enumerate(documents):
+            metadata = metadatas[i] if i < len(metadatas) and metadatas[i] else {}
+            recent_queries.append(
+                {
+                    "query": doc,
+                    "timestamp": metadata.get("query_ts") if metadata else None,
+                    "top_match_url": metadata.get("top_match_url") if metadata else None,
+                }
+            )
         return {
             "status": "ok",
             "total_logged_queries": count,
