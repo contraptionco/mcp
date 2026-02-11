@@ -91,14 +91,16 @@ async def debug_query_log_test(
 ) -> dict[str, Any]:
     """Test query logging to verify it's working."""
     import time
+
     chroma_service = await get_chroma_service()
     timestamp = int(time.time())
     top_match = {"post_id": "test", "post_url": "https://contraption.co/test"}
-    
+
     try:
         await chroma_service.log_query(query, top_match)
         # Give the background task a moment to complete
         import asyncio
+
         await asyncio.sleep(1)
         return {
             "status": "ok",
@@ -125,11 +127,13 @@ async def debug_query_log_stats() -> dict[str, Any]:
         if recent.get("documents"):
             for i, doc in enumerate(recent["documents"]):
                 metadata = recent["metadatas"][i] if recent.get("metadatas") else {}
-                recent_queries.append({
-                    "query": doc,
-                    "timestamp": metadata.get("query_ts"),
-                    "top_match_url": metadata.get("top_match_url"),
-                })
+                recent_queries.append(
+                    {
+                        "query": doc,
+                        "timestamp": metadata.get("query_ts"),
+                        "top_match_url": metadata.get("top_match_url"),
+                    }
+                )
         return {
             "status": "ok",
             "total_logged_queries": count,
@@ -138,7 +142,7 @@ async def debug_query_log_stats() -> dict[str, Any]:
         }
     except Exception as e:
         return {
-            "status": "error", 
+            "status": "error",
             "message": str(e),
         }
 
