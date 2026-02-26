@@ -22,7 +22,7 @@ from chromadb.base_types import SparseVector
 from chromadb.types import Metadata
 
 from src.config import settings
-from src.embeddings import EmbeddingService, QueryEmbeddingService
+from src.embeddings import EmbeddingService
 from src.models import ContentType, PostChunk, PostSummary
 from src.models import SearchResult as PostSearchResult
 
@@ -32,7 +32,7 @@ logger = logging.getLogger(__name__)
 class ChromaService:
     def __init__(self) -> None:
         self.embedding_service = EmbeddingService()
-        self.query_embedding_service = QueryEmbeddingService()
+        self.query_collection: Any | None = None
         self.client = chromadb.CloudClient(
             tenant=settings.chroma_tenant,
             database=settings.chroma_database,
@@ -76,13 +76,6 @@ class ChromaService:
 
     def _build_query_schema(self) -> Schema:
         schema = Schema()
-
-        vector_index = VectorIndexConfig(
-            embedding_function=self.query_embedding_service.dense_function,
-            source_key="#document",
-            space="cosine",
-        )
-        schema.create_index(config=vector_index)
 
         for metadata_key in ("top_match_id", "top_match_url"):
             schema.create_index(config=StringInvertedIndexConfig(), key=metadata_key)
@@ -355,23 +348,13 @@ class ChromaService:
             distinct_results=distinct_results,
         )
 
-        # Console-friendly printout for quick debugging/inspection
-        try:
-            print(f"\n📊 Hybrid Search Results (RRF Combined) — Query: {query!r}")
-            if results:
-                for i, result in enumerate(results):
-                    title = result.post_title or "Unknown"
-                    score = result.relevance_score or 0.0
-                    excerpt = (result.excerpt or "").strip()
-                    print(f"   {i + 1}. [{title}] Score: {score:.4f}")
-                    if excerpt:
-                        print(f"      Text: {excerpt[:100]}...")
-            else:
-                print("   No results")
-        except Exception:  # Best-effort printing; never block search on logging issues
-            pass
-
-        asyncio.create_task(self.log_query(query, top_match))
+        asyncio.create_task(
+            self.log_query(
+                query,
+                params={"limit": limit, "distinct_results": distinct_results},
+                top_match=top_match,
+            )
+        )
 
         return results
 
@@ -559,13 +542,19 @@ class ChromaService:
     def _filter_public_tag_names(tags: list[str]) -> list[str]:
         return [tag for tag in tags if tag and not tag.startswith("#")]
 
-    async def log_query(self, query: str, top_match: dict[str, str | None]) -> None:
-        if not query:
+    async def log_query(
+        self,
+        query: str,
+        *,
+        params: dict[str, Any] | None,
+        top_match: dict[str, str | None],
+    ) -> None:
+        if not query or self.query_collection is None:
             return
 
         timestamp = int(time.time())
         try:
-            await asyncio.to_thread(self._log_query_sync, query, timestamp, top_match)
+            await asyncio.to_thread(self._log_query_sync, query, timestamp, top_match, params)
         except Exception as exc:  # pragma: no cover - non-blocking logging
             logger.warning("Failed to log query asynchronously: %s", exc)
 
@@ -574,33 +563,59 @@ class ChromaService:
         query: str,
         timestamp: int,
         top_match: dict[str, str | None],
+        params: dict[str, Any] | None,
     ) -> None:
-        query_embedding_service = QueryEmbeddingService()
+        if self.query_collection is None:
+            return
         try:
-            embedding = query_embedding_service.embed_query(query)
-            query_embeddings = cast(list[Sequence[float] | Sequence[int]], [embedding])
             query_id = f"query_{timestamp}_{uuid.uuid4().hex}"
 
-            metadata: dict[str, str | int] = {"query_ts": timestamp}
-
-            top_match_id = top_match.get("post_id") or top_match.get("chunk_id")
-            if top_match_id:
-                metadata["top_match_id"] = top_match_id
-
-            top_match_url = top_match.get("post_url")
-            if top_match_url:
-                metadata["top_match_url"] = top_match_url
+            metadata = self._build_query_metadata(
+                query=query,
+                timestamp=timestamp,
+                top_match=top_match,
+                params=params,
+            )
 
             self.query_collection.upsert(
                 ids=[query_id],
-                embeddings=query_embeddings,
                 documents=[query],
                 metadatas=[metadata],
             )
         except Exception as exc:  # pragma: no cover - best-effort logging
             logger.warning("Failed to log query in Chroma: %s", exc)
-        finally:
-            query_embedding_service.close()
+
+    @staticmethod
+    def _build_query_metadata(
+        *,
+        query: str,
+        timestamp: int,
+        top_match: dict[str, str | None],
+        params: dict[str, Any] | None,
+    ) -> dict[str, str | int | float | bool]:
+        metadata: dict[str, str | int | float | bool] = {
+            "query_ts": timestamp,
+            "query": query,
+        }
+
+        top_match_id = top_match.get("post_id") or top_match.get("chunk_id")
+        if top_match_id:
+            metadata["top_match_id"] = top_match_id
+
+        top_match_url = top_match.get("post_url")
+        if top_match_url:
+            metadata["top_match_url"] = top_match_url
+
+        if params:
+            for key, value in params.items():
+                if value is None:
+                    continue
+                if isinstance(value, bool | int | float | str):
+                    metadata[key] = value
+                else:
+                    metadata[key] = str(value)
+
+        return metadata
 
     async def delete_post(self, slug: str, content_type: str | None = None) -> None:
         where = self._build_where({"post_slug": slug, "content_type": content_type})
