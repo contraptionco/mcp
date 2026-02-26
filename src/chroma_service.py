@@ -4,7 +4,7 @@ import os
 import time
 import uuid
 from collections.abc import Sequence
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any, cast
 
 import chromadb
@@ -103,7 +103,7 @@ class ChromaService:
     def _build_query_schema(self) -> Schema:
         schema = Schema()
 
-        for metadata_key in ("top_match_id", "top_match_url"):
+        for metadata_key in ("top_match_id", "top_match_url", "query_time"):
             schema.create_index(config=StringInvertedIndexConfig(), key=metadata_key)
 
         schema.create_index(config=IntInvertedIndexConfig(), key="query_ts")
@@ -603,6 +603,7 @@ class ChromaService:
     ) -> dict[str, str | int | float | bool]:
         metadata: dict[str, str | int | float | bool] = {
             "query_ts": timestamp,
+            "query_time": datetime.fromtimestamp(timestamp, tz=UTC).isoformat(),
             "query": query,
         }
 

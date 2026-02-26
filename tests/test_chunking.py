@@ -70,39 +70,9 @@ class TestPostChunking:
         assert all(isinstance(chunk, PostChunk) for chunk in chunks)
         assert chunks[0].post_slug == "test-post"
         assert chunks[0].post_title == "Test Post"
-        assert chunks[0].chunk_text.startswith("Test Post (2024-01-15)\n")
+        assert "Test Post" not in chunks[0].chunk_text  # title is metadata, not in document
         assert chunks[0].tags == ["test"]
         assert chunks[0].authors == ["Author"]
-
-    def test_create_chunks_includes_date_in_prefix(self):
-        published = datetime(2024, 6, 30, 8, 0, 0)
-        post = GhostPost(
-            id="test-id",
-            slug="test-post",
-            title="My Title",
-            html="<p>Content line</p>",
-            url="https://example.com/test-post",
-            published_at=published,
-        )
-
-        chunks = self.indexer._create_chunks(post)
-
-        assert len(chunks) >= 1
-        assert chunks[0].chunk_text.startswith("My Title (2024-06-30)\n")
-
-    def test_create_chunks_no_date(self):
-        post = GhostPost(
-            id="test-id",
-            slug="test-post",
-            title="My Title",
-            html="<p>Content line</p>",
-            url="https://example.com/test-post",
-        )
-
-        chunks = self.indexer._create_chunks(post)
-
-        assert len(chunks) >= 1
-        assert chunks[0].chunk_text.startswith("My Title\n")
 
     def test_create_chunks_handles_long_content(self):
         lines = [f"Line number {i}" for i in range(100)]
@@ -122,4 +92,4 @@ class TestPostChunking:
         # Each non-empty line becomes a chunk
         assert len(chunks) >= 100
         for chunk in chunks:
-            assert chunk.chunk_text.startswith("Test Post\n")
+            assert "Test Post" not in chunk.chunk_text

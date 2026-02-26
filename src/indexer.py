@@ -69,11 +69,6 @@ class PostIndexer:
             logger.warning("%s %s has no content to index", content_type, post.slug)
             return [], None
 
-        title_prefix = (post.title or "").strip()
-        if post.published_at:
-            date_str = post.published_at.strftime("%Y-%m-%d")
-            title_prefix = f"{title_prefix} ({date_str})" if title_prefix else date_str
-
         content_hash = hashlib.sha256("\n".join(lines).encode("utf-8")).hexdigest()
 
         chunks = []
@@ -81,14 +76,12 @@ class PostIndexer:
         authors = [author.get("name", "") for author in post.authors if author.get("name")]
 
         for i, line_text in enumerate(lines):
-            document_text = f"{title_prefix}\n{line_text}" if title_prefix else line_text
-
             chunk = PostChunk(
                 post_id=post.id,
                 post_slug=post.slug,
                 post_title=post.title,
                 post_url=post.url or f"{settings.ghost_api_url}/{post.slug}/",
-                chunk_text=document_text,
+                chunk_text=line_text,
                 chunk_index=i,
                 total_chunks=len(lines),
                 content_type=content_type,

@@ -54,6 +54,7 @@ def test_build_query_metadata_includes_params() -> None:
 
     assert metadata["query"] == "hello world"
     assert metadata["query_ts"] == 1700000000
+    assert metadata["query_time"] == "2023-11-14T22:13:20+00:00"
     assert metadata["limit"] == 5
     assert metadata["distinct_results"] is True
     assert metadata["top_match_id"] == "post-1"
