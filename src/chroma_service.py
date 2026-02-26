@@ -103,7 +103,7 @@ class ChromaService:
     def _build_query_schema(self) -> Schema:
         schema = Schema()
 
-        for metadata_key in ("top_match_id", "top_match_url", "query_time"):
+        for metadata_key in ("top_match_url", "query_time"):
             schema.create_index(config=StringInvertedIndexConfig(), key=metadata_key)
 
         schema.create_index(config=IntInvertedIndexConfig(), key="query_ts")
@@ -604,12 +604,7 @@ class ChromaService:
         metadata: dict[str, str | int | float | bool] = {
             "query_ts": timestamp,
             "query_time": datetime.fromtimestamp(timestamp, tz=UTC).isoformat(),
-            "query": query,
         }
-
-        top_match_id = top_match.get("post_id") or top_match.get("chunk_id")
-        if top_match_id:
-            metadata["top_match_id"] = top_match_id
 
         top_match_url = top_match.get("post_url")
         if top_match_url:
