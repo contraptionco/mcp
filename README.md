@@ -110,9 +110,9 @@ print(response)
 
 ## Features
 
-- Semantic Search: Hybrid search with Voyage contextualized embeddings + sparse Splade vectors
+- Search: Find posts and pages by query text
 - Automatic Indexing: Syncs with the blog API on startup and via scheduled polling
-- Full Content Access: Uses Ghost Admin API to index all published posts and pages, including members-only posts
+- Full Content Access: Indexes all published posts and pages, including members-only content
 - Fast Performance: Powered by FastAPI and Chroma Cloud
 - Background Updates: Polls Ghost every few minutes for new, updated, or deleted posts and pages
 - Query Logging: Records searches in a dedicated Chroma collection for analysis
@@ -166,12 +166,19 @@ Running locally requires credentials for external services:
 - **Voyage API Key**: Required to generate contextualized embeddings
 - **Ghost Blog URL**: Your Ghost blog's URL
 - **Polling Interval (optional)**: Set `POLL_INTERVAL_SECONDS` to override the default 5 minute sync cadence
+- Members-only content and query logging are enabled by default. Ensure your privacy policy and access controls cover both.
+
+## Support and Privacy
+
+- **Support**: `hello@contraption.co`
+- **Privacy policy**: https://www.contraption.co/privacy/
+- Query logging and members-only content are enabled, and the privacy policy must cover both.
 
 ## MCP Tools
 
-- `fetch(id=None, url=None, method="GET", headers=None, body=None)`: Fetch a single post or page via the MCP fetch contract using the canonical URL as the identifier. Provide either the `id` returned by `list_posts`/`search` (which is the canonical URL) or a `url`; Ghost slugs and shorthand schemes are also accepted but responses always resolve to full URLs.
+- `fetch(id)`: Fetch a single post or page using the canonical URL as the identifier. Provide the `id` returned by `list_posts`/`search` (which is the canonical URL); slugs and shorthand schemes are also accepted but responses always resolve to full URLs.
 - `list_posts(sort_by, page, limit)`: List posts with pagination, returning canonical URLs as identifiers
-- `search(query, limit)`: Semantic search across posts and pages that emits canonical URLs for result IDs
+- `search(query, limit)`: Search posts and pages by query text; returns canonical URLs for result IDs
 
 ## API Endpoints
 

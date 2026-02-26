@@ -28,21 +28,29 @@ class TestPostChunking:
         assert "This is a test paragraph" in cleaned
         assert "Another paragraph here" in cleaned
 
-    def test_chunk_by_paragraphs(self):
-        text = """
-        This is the first paragraph with some content.
+    def test_chunk_by_lines(self):
+        text = "First line\n\nSecond line\n   \nThird line\n"
 
-        This is the second paragraph with more content.
+        lines = self.indexer._chunk_by_lines(text)
 
-        This is the third paragraph with even more content.
-        """
+        assert lines == ["First line", "Second line", "Third line"]
 
-        chunks = self.indexer._chunk_by_paragraphs(text)
+    def test_chunk_by_lines_strips_whitespace(self):
+        text = "  leading spaces\ntrailing spaces  \n  both  "
 
-        assert len(chunks) == 3
-        assert all(chunk.strip() for chunk in chunks)
+        lines = self.indexer._chunk_by_lines(text)
+
+        assert lines == ["leading spaces", "trailing spaces", "both"]
+
+    def test_chunk_by_lines_skips_empty(self):
+        text = "\n\n\nonly line\n\n\n"
+
+        lines = self.indexer._chunk_by_lines(text)
+
+        assert lines == ["only line"]
 
     def test_create_chunks_from_post(self):
+        published = datetime(2024, 1, 15, 12, 0, 0)
         post = GhostPost(
             id="test-id",
             slug="test-post",
@@ -50,7 +58,7 @@ class TestPostChunking:
             html="<p>First paragraph.</p><p>Second paragraph.</p>",
             plaintext="First paragraph. Second paragraph.",
             url="https://example.com/test-post",
-            published_at=datetime.now(),
+            published_at=published,
             updated_at=datetime.now(),
             tags=[{"name": "test"}],
             authors=[{"name": "Author"}],
@@ -62,25 +70,56 @@ class TestPostChunking:
         assert all(isinstance(chunk, PostChunk) for chunk in chunks)
         assert chunks[0].post_slug == "test-post"
         assert chunks[0].post_title == "Test Post"
-        assert chunks[0].chunk_text == "Test Post"
+        assert chunks[0].chunk_text.startswith("Test Post (2024-01-15)\n")
         assert chunks[0].tags == ["test"]
         assert chunks[0].authors == ["Author"]
 
-    def test_create_chunks_handles_long_content(self):
-        long_text = " ".join(["word"] * 2000)
-
+    def test_create_chunks_includes_date_in_prefix(self):
+        published = datetime(2024, 6, 30, 8, 0, 0)
         post = GhostPost(
             id="test-id",
             slug="test-post",
-            title="Test Post",
-            html=f"<p>{long_text}</p>",
-            plaintext=long_text,
+            title="My Title",
+            html="<p>Content line</p>",
+            url="https://example.com/test-post",
+            published_at=published,
+        )
+
+        chunks = self.indexer._create_chunks(post)
+
+        assert len(chunks) >= 1
+        assert chunks[0].chunk_text.startswith("My Title (2024-06-30)\n")
+
+    def test_create_chunks_no_date(self):
+        post = GhostPost(
+            id="test-id",
+            slug="test-post",
+            title="My Title",
+            html="<p>Content line</p>",
             url="https://example.com/test-post",
         )
 
         chunks = self.indexer._create_chunks(post)
 
-        assert len(chunks) > 1
+        assert len(chunks) >= 1
+        assert chunks[0].chunk_text.startswith("My Title\n")
+
+    def test_create_chunks_handles_long_content(self):
+        lines = [f"Line number {i}" for i in range(100)]
+        html = "".join(f"<p>{line}</p>" for line in lines)
+
+        post = GhostPost(
+            id="test-id",
+            slug="test-post",
+            title="Test Post",
+            html=html,
+            plaintext="\n".join(lines),
+            url="https://example.com/test-post",
+        )
+
+        chunks = self.indexer._create_chunks(post)
+
+        # Each non-empty line becomes a chunk
+        assert len(chunks) >= 100
         for chunk in chunks:
-            words = chunk.chunk_text.split()
-            assert len(words) <= self.indexer.chunk_size
+            assert chunk.chunk_text.startswith("Test Post\n")

@@ -29,6 +29,9 @@ class GhostAPIClient:
             logger.error(f"Invalid Admin API key format: {e}")
             raise ValueError("Admin API key must be in format 'id:secret'") from e
 
+    def _build_published_filter(self) -> str:
+        return "status:published"
+
     def _generate_token(self) -> str:
         """Generate JWT token for Admin API authentication."""
         iat = datetime.now(UTC)
@@ -199,8 +202,9 @@ class GhostAPIClient:
         page = 1
 
         # Fetch all published posts (excluding drafts)
+        filter_str = self._build_published_filter()
         while True:
-            posts, meta = await self.get_posts(limit=50, page=page, filter_str="status:published")
+            posts, meta = await self.get_posts(limit=50, page=page, filter_str=filter_str)
             all_posts.extend(posts)
 
             pagination = meta.get("pagination", {})
@@ -216,8 +220,9 @@ class GhostAPIClient:
         all_pages = []
         page = 1
 
+        filter_str = self._build_published_filter()
         while True:
-            pages, meta = await self.get_pages(limit=50, page=page, filter_str="status:published")
+            pages, meta = await self.get_pages(limit=50, page=page, filter_str=filter_str)
             all_pages.extend(pages)
 
             pagination = meta.get("pagination", {})

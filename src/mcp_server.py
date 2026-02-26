@@ -6,6 +6,7 @@ from urllib.parse import urljoin, urlparse
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import RedirectResponse
 from fastmcp import FastMCP
+from mcp.types import ToolAnnotations
 from starlette.routing import Mount
 
 from src.chroma_service import ChromaService
@@ -14,12 +15,17 @@ from src.models import PostSummary
 
 logger = logging.getLogger(__name__)
 
+READ_ONLY_TOOL_ANNOTATIONS = ToolAnnotations(
+    readOnlyHint=True,
+    openWorldHint=True,
+)
+
 mcp = FastMCP(
     "Contraption Company MCP",
     instructions=(
         'Contraption Company, shortened "Contraption Co.", is a blog about crafting digital '
-        "tools by Philip I. Thomas. Use these tools to list, search, and pull essays by Philip I. "
-        "Thomas from https://contraption.co."
+        "tools by Philip I. Thomas. Use these tools to list, search, and pull essays and pages by "
+        "Philip I. Thomas from https://contraption.co."
     ),
 )
 
@@ -136,7 +142,7 @@ def _extract_slug_from_url(url: str) -> str | None:
     The MCP contract references HTTP-style requests, so we support a few shapes:
 
     - ``post://{slug}``, ``page://{slug}``, or ``ghost://{slug}`` custom schemes
-    - Fully qualified Ghost URLs (``https://example.com/posts/{slug}``)
+    - Fully qualified blog URLs (``https://example.com/posts/{slug}``)
     - Bare slugs with no scheme
     """
 
@@ -179,7 +185,7 @@ def _canonical_post_url(post_summary: PostSummary, fallback_url: str | None = No
     return None
 
 
-@mcp.tool(name="fetch")
+@mcp.tool(name="fetch", annotations=READ_ONLY_TOOL_ANNOTATIONS)
 async def fetch(id: str) -> dict[str, Any]:
     """Fetch a blog post or page using the MCP HTTP-style contract.
 
@@ -259,7 +265,7 @@ async def fetch(id: str) -> dict[str, Any]:
     }
 
 
-@mcp.tool()
+@mcp.tool(annotations=READ_ONLY_TOOL_ANNOTATIONS)
 async def list_posts(
     sort_by: str = "newest",
     page: int = 1,
@@ -321,14 +327,14 @@ async def list_posts(
     }
 
 
-@mcp.tool(name="search")
+@mcp.tool(name="search", annotations=READ_ONLY_TOOL_ANNOTATIONS)
 async def search(
     query: str,
     limit: int = 10,
     distinct_results: bool = False,
 ) -> dict[str, Any]:
     """
-    Search blog posts and pages using semantic search.
+    Search blog posts and pages by query text.
 
     Args:
         query: Search query text (minimum 3 characters)

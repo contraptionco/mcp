@@ -42,3 +42,19 @@ def test_build_search_result_filters_internal_tags() -> None:
     )
 
     assert result.tags == ["alpha", "beta"]
+
+
+def test_build_query_metadata_includes_params() -> None:
+    metadata = ChromaService._build_query_metadata(
+        query="hello world",
+        timestamp=1700000000,
+        top_match={"post_id": "post-1", "post_url": "https://example.com/post-1"},
+        params={"limit": 5, "distinct_results": True},
+    )
+
+    assert metadata["query"] == "hello world"
+    assert metadata["query_ts"] == 1700000000
+    assert metadata["limit"] == 5
+    assert metadata["distinct_results"] is True
+    assert metadata["top_match_id"] == "post-1"
+    assert metadata["top_match_url"] == "https://example.com/post-1"

@@ -13,9 +13,19 @@ class TestMCPTools:
         assert (
             mcp.instructions
             == 'Contraption Company, shortened "Contraption Co.", is a blog about crafting '
-            "digital tools by Philip I. Thomas. Use these tools to list, search, and pull essays by "
-            "Philip I. Thomas from https://contraption.co."
+            "digital tools by Philip I. Thomas. Use these tools to list, search, and pull essays "
+            "and pages by Philip I. Thomas from https://contraption.co."
         )
+
+    @pytest.mark.asyncio
+    async def test_tool_annotations_are_read_only(self):
+        tools = await mcp.get_tools()
+
+        for tool_name in ("fetch", "list_posts", "search"):
+            tool = tools[tool_name]
+            assert tool.annotations is not None
+            assert tool.annotations.readOnlyHint is True
+            assert tool.annotations.openWorldHint is True
 
     @pytest.mark.asyncio
     @patch("src.mcp_server.get_chroma_service")

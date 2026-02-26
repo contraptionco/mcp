@@ -7,7 +7,7 @@ requires-python = ">=3.12"
 dependencies = [
     "fastapi[standard]>=0.115.0",
     "fastmcp>=0.3.0",
-    "chromadb>=1.4.0",
+    "chromadb>=1.5.1",
     "httpx>=0.27.0",
     "pydantic>=2.9.0",
     "pydantic-settings>=2.6.0",
@@ -15,7 +15,6 @@ dependencies = [
     "beautifulsoup4>=4.12.0",
     "markdownify>=0.13.0",
     "tenacity>=9.0.0",
-    "voyageai>=0.3.7",
     "pyjwt>=2.10.1",
 ]
 
@@ -83,7 +82,6 @@ module = [
     "jwt.*",
     "bs4.*",
     "fastmcp.*",
-    "voyageai.*",
 ]
 ignore_missing_imports = true
 

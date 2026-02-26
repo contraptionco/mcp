@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import os
 import time
 import uuid
 from collections.abc import Sequence
@@ -18,11 +19,19 @@ from chromadb.api.types import (
 from chromadb.api.types import (
     SearchResult as ChromaSearchResponse,
 )
-from chromadb.base_types import SparseVector
 from chromadb.types import Metadata
+from chromadb.utils.embedding_functions import (
+    ChromaCloudQwenEmbeddingFunction,
+    ChromaCloudSpladeEmbeddingFunction,
+)
+from chromadb.utils.embedding_functions.chroma_cloud_qwen_embedding_function import (
+    ChromaCloudQwenEmbeddingModel,
+)
+from chromadb.utils.embedding_functions.chroma_cloud_splade_embedding_function import (
+    ChromaCloudSpladeEmbeddingModel,
+)
 
 from src.config import settings
-from src.embeddings import EmbeddingService
 from src.models import ContentType, PostChunk, PostSummary
 from src.models import SearchResult as PostSearchResult
 
@@ -31,8 +40,15 @@ logger = logging.getLogger(__name__)
 
 class ChromaService:
     def __init__(self) -> None:
-        self.embedding_service = EmbeddingService()
         self.query_collection: Any | None = None
+        self._ensure_chroma_api_key()
+        self._qwen_ef = ChromaCloudQwenEmbeddingFunction(
+            model=ChromaCloudQwenEmbeddingModel.QWEN3_EMBEDDING_0p6B,
+            task=cast(Any, ""),
+        )
+        self._splade_ef = ChromaCloudSpladeEmbeddingFunction(
+            model=ChromaCloudSpladeEmbeddingModel.SPLADE_PP_EN_V1,
+        )
         self.client = chromadb.CloudClient(
             tenant=settings.chroma_tenant,
             database=settings.chroma_database,
@@ -43,18 +59,28 @@ class ChromaService:
         self._ensure_collection()
         self._ensure_query_collection()
 
+    def _ensure_chroma_api_key(self) -> None:
+        if os.getenv("CHROMA_API_KEY"):
+            return
+        if settings.chroma_api_key:
+            os.environ["CHROMA_API_KEY"] = settings.chroma_api_key
+            logger.debug("Configured CHROMA_API_KEY environment variable")
+            return
+        raise ValueError("Chroma API key must be configured")
+
     def _build_schema(self) -> Schema:
         schema = Schema()
 
         vector_index = VectorIndexConfig(
-            embedding_function=None,
+            embedding_function=self._qwen_ef,
             source_key="#document",
             space="cosine",
         )
         schema.create_index(config=vector_index)
 
         sparse_index = SparseVectorIndexConfig(
-            embedding_function=self.embedding_service.sparse_function,
+            embedding_function=self._splade_ef,
+            source_key="#document",
         )
         schema.create_index(config=sparse_index, key="sparse_vector")
 
@@ -121,14 +147,14 @@ class ChromaService:
 
         ids: list[str] = []
         texts: list[str] = []
-        metadata_records: list[dict[str, str | int | float | bool | None | SparseVector]] = []
+        metadata_records: list[dict[str, str | int | float | bool | None]] = []
 
         for chunk in chunks:
             chunk_id = f"{chunk.content_type}_{chunk.post_id}_{chunk.chunk_index}"
             ids.append(chunk_id)
             texts.append(chunk.chunk_text)
 
-            metadata_dict: dict[str, str | int | float | bool | None | SparseVector] = {
+            metadata_dict: dict[str, str | int | float | bool | None] = {
                 "post_id": chunk.post_id,
                 "post_slug": chunk.post_slug,
                 "post_title": chunk.post_title,
@@ -149,28 +175,8 @@ class ChromaService:
 
             metadata_records.append(metadata_dict)
 
-        embeddings: list[list[float]] = self.embedding_service.embed_chunks(texts)
-        embeddings_seq = cast(list[Sequence[float] | Sequence[int]], embeddings)
-        sparse_embeddings = self.embedding_service.sparse_embed_texts(texts)
-
-        if sparse_embeddings and len(sparse_embeddings) != len(metadata_records):
-            logger.warning(
-                "Sparse embedding count (%s) does not match metadata count (%s)",
-                len(sparse_embeddings),
-                len(metadata_records),
-            )
-
-        for index, metadata in enumerate(metadata_records):
-            sparse_vector: SparseVector
-            if index < len(sparse_embeddings):
-                sparse_vector = sparse_embeddings[index]
-            else:
-                sparse_vector = SparseVector(indices=[], values=[])
-            metadata["sparse_vector"] = sparse_vector
-
         self.collection.upsert(
             ids=ids,
-            embeddings=embeddings_seq,
             documents=texts,
             metadatas=cast(list[Metadata], metadata_records),
         )
@@ -333,17 +339,8 @@ class ChromaService:
         *,
         distinct_results: bool = False,
     ) -> list[PostSearchResult]:
-        dense_embedding: list[float] | None = None
-        try:
-            dense_embedding = self.embedding_service.embed_query(query)
-        except Exception as exc:
-            logger.warning("Dense query embedding failed; falling back to sparse-only: %s", exc)
-
-        sparse_embedding = self.embedding_service.sparse_embed_query(query)
-
         results, top_match = self._hybrid_rrf_search(
-            dense_embedding=dense_embedding,
-            sparse_embedding=sparse_embedding,
+            query_text=query,
             limit=limit,
             distinct_results=distinct_results,
         )
@@ -358,25 +355,36 @@ class ChromaService:
 
         return results
 
+    def _embed_query(self, query_text: str) -> tuple[list[float], Any]:
+        """Pre-embed query text for both dense and sparse search.
+
+        Workaround for chromadb bug where ``_embed_knn_string_queries``
+        calls ``if not embedding`` on a numpy array, raising ValueError.
+        By passing pre-computed vectors to Knn we bypass that code path.
+        """
+        dense_raw = self._qwen_ef.embed_query([query_text])
+        dense_embedding = [float(v) for v in dense_raw[0]]
+        sparse_vectors = self._splade_ef([query_text])
+        sparse_embedding = sparse_vectors[0]
+        return dense_embedding, sparse_embedding
+
     def _hybrid_rrf_search(
         self,
         *,
-        dense_embedding: list[float] | None,
-        sparse_embedding: SparseVector | None,
+        query_text: str,
         limit: int,
         distinct_results: bool,
     ) -> tuple[list[PostSearchResult], dict[str, str | None]]:
-        dense_weight = settings.dense_query_weight if dense_embedding else 0.0
-        sparse_weight = settings.sparse_query_weight if sparse_embedding else 0.0
+        dense_weight = settings.dense_query_weight
+        sparse_weight = settings.sparse_query_weight
 
-        if dense_weight == 0.0 and sparse_weight == 0.0:
-            raise NotImplementedError("No embeddings available for search")
+        dense_embedding, sparse_embedding = self._embed_query(query_text)
 
         rrf_k = settings.hybrid_rrf_k
         rank_limit = max(limit * 5, limit, 128)
 
         rank_expression: Any | None = None
-        if dense_embedding and dense_weight > 0:
+        if dense_weight > 0:
             dense_knn = chroma_expr.Knn(
                 query=dense_embedding,
                 key="#embedding",
@@ -385,7 +393,7 @@ class ChromaService:
             )
             rank_expression = chroma_expr.Val(-dense_weight) / (chroma_expr.Val(rrf_k) + dense_knn)
 
-        if sparse_embedding and sparse_weight > 0:
+        if sparse_weight > 0:
             sparse_knn = chroma_expr.Knn(
                 query=sparse_embedding,
                 key="sparse_vector",

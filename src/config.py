@@ -1,6 +1,6 @@
 from typing import Any
 
-from pydantic import AliasChoices, Field, model_validator
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -14,7 +14,7 @@ class Settings(BaseSettings):
     chroma_database: str = Field(description="Chroma database name")
     chroma_api_key: str = Field(description="Chroma API key")
     chroma_collection: str = Field(
-        default="content",
+        default="content-qwen",
         description="Chroma collection name",
     )
     chroma_query_collection: str = Field(
@@ -24,19 +24,12 @@ class Settings(BaseSettings):
 
     ghost_admin_api_key: str = Field(description="Ghost Admin API key")
     ghost_api_url: str = Field(description="Ghost API URL")
-    voyage_api_key: str = Field(
-        validation_alias=AliasChoices("VOYAGE_API_KEY", "VOYAGEAI_API_KEY"),
-        description="Voyage API key",
-    )
 
     poll_interval_seconds: int = Field(
         default=300,
         ge=60,
         description="Interval in seconds to poll Ghost for new or updated posts/pages",
     )
-
-    chunk_size: int = Field(default=500, description="Maximum chunk size in words")
-    chunk_overlap: int = Field(default=50, description="Overlap between chunks in words")
 
     max_posts_per_page: int = Field(default=10, description="Maximum posts per page")
     search_top_k: int = Field(default=10, description="Number of search results to return")

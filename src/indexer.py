@@ -1,6 +1,5 @@
 import hashlib
 import logging
-import re
 from typing import Any
 
 from bs4 import BeautifulSoup
@@ -18,8 +17,6 @@ class PostIndexer:
     def __init__(self, ghost_client: GhostAPIClient, chroma_service: ChromaService) -> None:
         self.ghost_client = ghost_client
         self.chroma_service = chroma_service
-        self.chunk_size = settings.chunk_size
-        self.chunk_overlap = settings.chunk_overlap
 
     def _clean_html(self, html: str) -> str:
         soup = BeautifulSoup(html, "html.parser")
@@ -44,32 +41,13 @@ class PostIndexer:
             return post.plaintext
         return None
 
-    def _split_paragraphs(self, text: str) -> list[str]:
-        paragraphs = re.split(r"\n\s*\n+", text.strip())
-        cleaned: list[str] = []
-        for paragraph in paragraphs:
-            paragraph = paragraph.strip()
-            if not paragraph:
-                continue
-            cleaned.append(paragraph)
-        return cleaned
-
-    def _chunk_by_paragraphs(self, text: str) -> list[str]:
-        paragraphs = self._split_paragraphs(text)
-
-        chunks: list[str] = []
-        for paragraph in paragraphs:
-            words = paragraph.split()
-            if len(words) <= self.chunk_size:
-                chunks.append(paragraph)
-                continue
-
-            step = max(self.chunk_size - self.chunk_overlap, 1)
-            for i in range(0, len(words), step):
-                chunk_words = words[i : i + self.chunk_size]
-                chunks.append(" ".join(chunk_words))
-
-        return chunks
+    def _chunk_by_lines(self, text: str) -> list[str]:
+        lines: list[str] = []
+        for line in text.split("\n"):
+            stripped = line.strip()
+            if stripped:
+                lines.append(stripped)
+        return lines
 
     def _build_chunks_and_hash(
         self, post: GhostPost, content_type: ContentType
@@ -81,44 +59,44 @@ class PostIndexer:
             bool(post.plaintext),
         )
 
-        chunks_text: list[str] = []
-        if post.title:
-            chunks_text.append(post.title.strip())
-
-        subtitle = post.custom_excerpt or post.meta_description
-        if subtitle:
-            chunks_text.append(subtitle.strip())
-
         markdown_text = self._extract_markdown(post)
-        if markdown_text:
-            chunks_text.extend(self._chunk_by_paragraphs(markdown_text))
-
-        if not chunks_text:
+        if not markdown_text:
             logger.warning("%s %s has no content to index", content_type, post.slug)
             return [], None
 
-        content_hash = hashlib.sha256("\n\n".join(chunks_text).encode("utf-8")).hexdigest()
+        lines = self._chunk_by_lines(markdown_text)
+        if not lines:
+            logger.warning("%s %s has no content to index", content_type, post.slug)
+            return [], None
+
+        title_prefix = (post.title or "").strip()
+        if post.published_at:
+            date_str = post.published_at.strftime("%Y-%m-%d")
+            title_prefix = f"{title_prefix} ({date_str})" if title_prefix else date_str
+
+        content_hash = hashlib.sha256("\n".join(lines).encode("utf-8")).hexdigest()
 
         chunks = []
-        for i, chunk_text in enumerate(chunks_text):
-            if not chunk_text.strip():
-                continue
+        public_tags = self._filter_public_tags(post.tags)
+        authors = [author.get("name", "") for author in post.authors if author.get("name")]
 
-            public_tags = self._filter_public_tags(post.tags)
+        for i, line_text in enumerate(lines):
+            document_text = f"{title_prefix}\n{line_text}" if title_prefix else line_text
+
             chunk = PostChunk(
                 post_id=post.id,
                 post_slug=post.slug,
                 post_title=post.title,
                 post_url=post.url or f"{settings.ghost_api_url}/{post.slug}/",
-                chunk_text=chunk_text,
+                chunk_text=document_text,
                 chunk_index=i,
-                total_chunks=len(chunks_text),
+                total_chunks=len(lines),
                 content_type=content_type,
                 content_hash=content_hash,
                 published_at=post.published_at,
                 updated_at=post.updated_at,
                 tags=public_tags,
-                authors=[author.get("name", "") for author in post.authors if author.get("name")],
+                authors=authors,
             )
             chunks.append(chunk)
 
